@@ -3,41 +3,38 @@ name: Update Yeongeum720 Data (Scheduled)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "10 18 * * *"  # KST 03:10
+    # ✅ KST 목요일 밤 추첨 후(대략) 다음날/당일 어느때나 갱신되도록 매일 03:20 UTC (KST 12:20)
+    - cron: "20 3 * * *"
 
 permissions:
   contents: write
 
-concurrency:
-  group: update-yeongeum720
-  cancel-in-progress: true
-
 jobs:
   update:
-    runs-on: [self-hosted, mega-home]   # ✅ 여기만 “내가 이미 가진 라벨”로 맞추면 됨
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
 
       - name: Update JSON
         run: node scripts/update_yeongeum720.mjs
 
       - name: Commit & Push (if changed)
         run: |
-          if git diff --quiet; then
+          if [ -z "$(git status --porcelain)" ]; then
             echo "No changes."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add data/yeongeum720_draws.json data/yeongeum720_freq.json
-          git commit -m "chore(data): update yeongeum720"
+          git commit -m "chore: update yeongeum720 data"
           git push
