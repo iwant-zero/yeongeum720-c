@@ -113,8 +113,12 @@
 <script>
   const $ = (s) => document.querySelector(s);
 
-  const PATH_FREQ  = "../data/yeongeum720_freq.json";
-  const PATH_DRAWS = "../data/yeongeum720_draws.json";
+const PROJECT_ROOT = location.pathname.includes("/yeongeum720/")
+  ? new URL("../", location.href)   // /<repo>/yeongeum720/ 에서 열 때 → /<repo>/
+  : new URL("./", location.href);   // /<repo>/ 에서 열 때 → /<repo>/
+
+const PATH_FREQ  = new URL("data/yeongeum720_freq.json", PROJECT_ROOT).toString();
+const PATH_DRAWS = new URL("data/yeongeum720_draws.json", PROJECT_ROOT).toString();
 
   function cacheBust(url){ return url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); }
 
