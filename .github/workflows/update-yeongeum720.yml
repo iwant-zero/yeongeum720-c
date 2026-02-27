@@ -1,0 +1,43 @@
+name: Update Yeongeum720 Data (Scheduled)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # KST 03:10 (UTC 18:10)
+    - cron: "10 18 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-yeongeum720
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Update JSON
+        run: node scripts/update_yeongeum720.mjs
+
+      - name: Commit & Push (if changed)
+        run: |
+          if git diff --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/yeongeum720_draws.json data/yeongeum720_freq.json
+          git commit -m "chore(data): update yeongeum720"
+          git push
