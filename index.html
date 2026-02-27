@@ -177,7 +177,7 @@
       <div class="title">
         <h1>연금복권720+ 빈도 기반 추천기</h1>
         <p class="sub">
-          <b>1개=최빈 고정</b> / <b>5개=상위(Top) 혼합</b> / <b>10개=상~중~하 분산</b> (무작위 사용 안 함)
+          <b>1개=Top3 순환</b> / <b>5개=상위(Top) 혼합</b> / <b>10개=상~중~하 분산</b> (무작위 사용 안 함)
         </p>
       </div>
       <div class="meta">
@@ -191,7 +191,7 @@
       <section class="card">
         <div class="hd">
           <b>추천 생성</b>
-          <span class="small">5/10개는 클릭할수록 “순환(cycle)”으로 패턴이 바뀜(무작위 X)</span>
+          <span class="small">클릭할수록 “순환(cycle)”으로 패턴이 바뀜(무작위 X)</span>
         </div>
         <div class="bd">
           <div class="row">
@@ -261,14 +261,31 @@
 
   // ─────────────────────────────────────────────────────────
   // 추천 규칙
-  // 1개: 최빈 고정(항상 동일)
+  // 1개: Top3 순환 (버튼 누를 때마다 바뀜, 무작위 X)
   // 5개: 상위(Top 3) 혼합 + cycle로 순환
   // 10개: 상~중~하(Top~Mid~Low) 분산 + cycle로 순환
-  function recommendFixedTop1(){
+
+  function recommendTopCycle1(cycle){
     const { groupRank, posRank } = ranksFromFreq(freq);
-    const group = groupRank[0] ?? 1;
-    const digits = posRank.map(r => (r[0] ?? 0)).slice(0,6);
-    return [{ label: "1", mode: "최빈 고정", group, digits, ...makeHints(group, digits) }];
+
+    const gLen = groupRank.length || 1;
+    const group = groupRank[cycle % gLen] ?? 1;
+
+    const digits = [];
+    for (let p = 0; p < 6; p++) {
+      const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
+      const span = Math.min(3, r.length || 1);     // Top3
+      const idx = (cycle + p) % span;              // 자리마다 오프셋
+      digits.push(r[idx] ?? r[0] ?? 0);
+    }
+
+    return [{
+      label: "1",
+      mode: "Top3 순환",
+      group,
+      digits,
+      ...makeHints(group, digits)
+    }];
   }
 
   function recommendTopMix5(cycle){
@@ -294,7 +311,7 @@
       const digits = [];
       for(let p=0;p<6;p++){
         const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-        const span = Math.min(topSpan, r.length);
+        const span = Math.min(topSpan, r.length || 1);
         const idx = (pat[p] + base + i) % span;
         digits.push(r[idx] ?? 0);
       }
@@ -307,11 +324,10 @@
   function recommendSpread10(cycle){
     const { groupRank, posRank } = ranksFromFreq(freq);
 
-    // 각 세트가 서로 다른 “랭크대(상/중/하)”를 쓰도록 고정 패턴
     const patterns = [
       [0,0,0,0,0,0],     // 상
       [1,1,1,1,1,1],     // 상
-      [2,2,2,2,2,2],     // 상(끝)
+      [2,2,2,2,2,2],     // 상
       [3,4,3,4,3,4],     // 중
       [4,3,4,3,4,3],     // 중
       [5,6,5,6,5,6],     // 중~하
@@ -323,15 +339,16 @@
 
     const out = [];
     const base = cycle % 10;
+    const gLen = groupRank.length || 5;
 
     for(let i=0;i<10;i++){
       const pat = patterns[i];
-      const group = groupRank[(i + cycle) % (groupRank.length || 5)] ?? 1;
+      const group = groupRank[(i + cycle) % gLen] ?? 1;
 
       const digits = [];
       for(let p=0;p<6;p++){
         const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-        const idx = (pat[p] + base + p + i) % r.length; // 살짝 분산
+        const idx = (pat[p] + base + p + i) % (r.length || 1);
         digits.push(r[idx] ?? 0);
       }
 
@@ -383,10 +400,7 @@
     const h = document.createElement("div");
     h.className = "hintline";
 
-    // 2등: 조만 바뀜
-    const secondText = t.secondGroups
-      .map(g => `${g}조`)
-      .join(", ");
+    const secondText = t.secondGroups.map(g => `${g}조`).join(", ");
 
     h.innerHTML = `
       <span><b>2등(조만 변경):</b> <span class="mono">${secondText} + ${t.number}</span></span>
@@ -410,6 +424,7 @@
     try{
       const res = await fetch(cacheBust(PATH_FREQ));
       if(!res.ok) throw new Error(`freq fetch failed: ${res.status} ${res.statusText}\nURL: ${PATH_FREQ}`);
+
       freq = await res.json();
 
       const maxRound = freq.rounds?.max ?? "-";
@@ -428,8 +443,10 @@
 
   $("#b1").addEventListener("click", ()=>{
     if(!freq) return;
-    // 1개는 최빈 고정(사이클 영향 없음)
-    render(recommendFixedTop1());
+    const k = "yeongeum720_cycle_1";
+    const cycle = readCycle(k) + 1;
+    writeCycle(k, cycle);
+    render(recommendTopCycle1(cycle));
   });
 
   $("#b5").addEventListener("click", ()=>{
@@ -449,7 +466,8 @@
   });
 
   $("#bReset").addEventListener("click", ()=>{
-    ["yeongeum720_cycle_5","yeongeum720_cycle_10"].forEach(k => localStorage.removeItem(k));
+    ["yeongeum720_cycle_1","yeongeum720_cycle_5","yeongeum720_cycle_10"]
+      .forEach(k => localStorage.removeItem(k));
     setText("#status", "사이클 리셋 완료");
   });
 
