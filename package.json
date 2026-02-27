@@ -1,9 +1,9 @@
 {
-  "name": "yeongeum720-web",
+  "name": "yeongeum720-c",
   "private": true,
-  "version": "1.0.0",
-  "description": "Yeongeum720+ frequency-based recommender (static)",
+  "type": "module",
   "scripts": {
-    "dev": "npx http-server .. -p 4173 -c-1"
+    "update": "node ../scripts/update_yeongeum720.mjs",
+    "recommend:10": "node ../scripts/update_yeongeum720.mjs --no-write --recommend 10"
   }
 }
