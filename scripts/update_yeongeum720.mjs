@@ -9,406 +9,373 @@ const DATA_DIR = path.join(ROOT, "data");
 const DRAWS_PATH = path.join(DATA_DIR, "yeongeum720_draws.json");
 const FREQ_PATH = path.join(DATA_DIR, "yeongeum720_freq.json");
 
-const DEFAULT_BASES = [
-  // 가장 흔히 쓰는 회차별 결과 페이지 (HTML)
-  "https://www.dhlottery.co.kr/gameResult.do?method=win720&Round=",
-];
-
-function nowIso() {
-  return new Date().toISOString();
-}
+// ✅ GitHub-hosted에서 동행복권(dhlottery) 차단이 자주 발생 → 공개 페이지(티스토리) 소스 사용
+const TISTORY_SOURCE_URL = "https://signalfire85.tistory.com/277";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
 
-function safeJsonParse(s, fallback) {
+function ymdDotToISO(ymdDot) {
+  // "2026.02.19" -> "2026-02-19"
+  const m = String(ymdDot).match(/^(\d{4})\.(\d{2})\.(\d{2})$/);
+  if (!m) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+async function ensureDir(dir) {
+  await fs.mkdir(dir, { recursive: true });
+}
+
+async function readJson(filePath, fallback) {
   try {
+    const s = await fs.readFile(filePath, "utf-8");
     return JSON.parse(s);
   } catch {
     return fallback;
   }
 }
 
-async function exists(p) {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
+async function writeJson(filePath, obj) {
+  const s = JSON.stringify(obj, null, 2);
+  await fs.writeFile(filePath, s, "utf-8");
 }
 
 async function fetchText(url) {
   const res = await fetch(url, {
     headers: {
-      // 간단한 UA (차단 완화에 도움 되는 경우가 있음)
+      // 너무 봇처럼 보이지 않게
       "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
-      "accept-language": "ko-KR,ko;q=0.9,en;q=0.7",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
+      "accept":
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "ko-KR,ko;q=0.9,en;q=0.8",
+      "cache-control": "no-cache",
+      pragma: "no-cache",
     },
+    redirect: "follow",
   });
 
-  const text = await res.text();
-  return { status: res.status, text };
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Fetch failed ${res.status} ${res.statusText} :: ${url}\n${t.slice(0, 200)}`);
+  }
+  return await res.text();
 }
 
-function detectBlock(html) {
-  const signs = [
-    "서비스 접속이 차단",
-    "현재 접속하신 아이피에서는 접속이 불가능",
-    "서비스 접근 대기 중",
-    "접속량이 많아",
-    "자동 접속됩니다",
-  ];
-  return signs.some((s) => html.includes(s));
+function htmlToLooseText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
 }
 
-function extractBallDigits(htmlFragment) {
-  // 1) <span class="num ..."><span>3</span></span> 형태
-  const a = [...htmlFragment.matchAll(/class="num[^"]*".*?>\s*<span[^>]*>\s*([0-9])\s*<\/span>/gis)].map(
-    (m) => m[1]
-  );
-  if (a.length) return a.map((x) => Number(x));
+async function fetchDrawsFromTistory() {
+  const html = await fetchText(TISTORY_SOURCE_URL);
+  const text = htmlToLooseText(html);
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
-  // 2) <span class="num ...">3</span> 형태(백업)
-  const b = [...htmlFragment.matchAll(/<span[^>]*class="num[^"]*"[^>]*>\s*([0-9])\s*<\/span>/gis)].map(
-    (m) => m[1]
-  );
-  return b.map((x) => Number(x));
-}
+  const draws = [];
+  for (let i = 0; i < lines.length; i++) {
+    // 예: "303회 2026.02.19 1등 4 6 3 9 5 6 6 1"
+    const m = lines[i].match(
+      /^(\d{1,4})회\s+(\d{4}\.\d{2}\.\d{2})\s+1등\s+([1-5])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+(\d+)$/
+    );
+    if (!m) continue;
 
-function extractDateIso(html) {
-  // "2026년 2월 13일" 같은 형태
-  const m = html.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (!y || !mo || !d) return null;
-  return `${y}-${pad2(mo)}-${pad2(d)}`;
-}
+    const round = Number(m[1]);
+    const dateISO = ymdDotToISO(m[2]);
+    if (!dateISO) continue;
 
-function parseRoundHtml(round, html) {
-  if (detectBlock(html)) {
+    const group = Number(m[3]);
+    const digits = [m[4], m[5], m[6], m[7], m[8], m[9]].map(Number);
+    const firstWinCount = Number(m[10]);
+
+    // 다음 줄: "보너스 각조 6 1 9 1 3 6 10"
+    const bLine = lines[i + 1] || "";
+    const b = bLine.match(
+      /^보너스\s+각조\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+(\d+)$/
+    );
+    const bonusDigits = b
+      ? [b[1], b[2], b[3], b[4], b[5], b[6]].map(Number)
+      : null;
+    const bonusWinCount = b ? Number(b[7]) : null;
+
+    const numberStr = digits.join(""); // 6자리
+    const last5Str = digits.slice(1).join(""); // 3등(끝 5자리) 기준
+
+    // 2등은 “조만 다르고 6자리는 동일”이므로 별도 번호는 동일하게 저장
+    draws.push({
+      round,
+      date: dateISO,
+      first: {
+        group,
+        number: numberStr,
+        digits,
+        winners: firstWinCount,
+      },
+      // 2등: 각조(1~5) 중 1등 조 제외한 조들 + 동일 6자리
+      second: {
+        groups: [1, 2, 3, 4, 5].filter((g) => g !== group),
+        number: numberStr,
+      },
+      // 3등: 끝 5자리
+      third: {
+        last5: last5Str,
+      },
+      bonus: bonusDigits
+        ? {
+            number: bonusDigits.join(""),
+            digits: bonusDigits,
+            winners: bonusWinCount,
+          }
+        : null,
+      source: "tistory",
+    });
+  }
+
+  if (draws.length === 0) {
     throw new Error(
-      "동행복권 페이지가 '대기/차단' HTML을 반환했습니다. (GitHub 호스티드 러너에서 자주 발생)\n" +
-        "→ self-hosted runner(집 PC)로 돌리거나, 다른 공개 데이터 소스를 추가해야 합니다."
+      `티스토리 소스에서 파싱 결과가 0개입니다. (페이지 구조 변경 가능)\nURL: ${TISTORY_SOURCE_URL}`
     );
   }
 
-  const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) throw new Error(`round ${round}: <tbody>를 찾지 못했습니다.`);
-
-  const tbody = tbodyMatch[1];
-  const trs = tbody.match(/<tr[\s\S]*?<\/tr>/gi) || [];
-  if (trs.length < 2) throw new Error(`round ${round}: <tr>이 너무 적습니다.`);
-
-  const firstRow = trs.find((tr) => /1등/.test(tr)) || trs[0];
-  const bonusRow =
-    trs.find((tr) => /보너스/.test(tr)) || trs[trs.length - 1];
-
-  const firstNums = extractBallDigits(firstRow);
-  if (firstNums.length < 7) {
-    throw new Error(`round ${round}: 1등 숫자(조+6자리)를 파싱 실패했습니다.`);
-  }
-
-  const group = firstNums[0];
-  const digits = firstNums.slice(1, 7);
-
-  const bonusNums = extractBallDigits(bonusRow);
-  const bonus = bonusNums.slice(0, 6);
-  if (bonus.length < 6) {
-    throw new Error(`round ${round}: 보너스 6자리를 파싱 실패했습니다.`);
-  }
-
-  const dateIso = extractDateIso(html);
-
-  return {
-    round,
-    date: dateIso, // 없을 수도 있음
-    first: { group, digits }, // group: 1~5, digits: [d1..d6]
-    bonus: { digits: bonus }, // 각조 보너스 6자리
-  };
+  // round 내림차순 정렬
+  draws.sort((a, b) => b.round - a.round);
+  return draws;
 }
 
-function inc(obj, k) {
-  obj[k] = (obj[k] ?? 0) + 1;
-}
+function rankCounts(countsMapOrArr) {
+  // countsMapOrArr: {digit:count} or number[]
+  const entries = Array.isArray(countsMapOrArr)
+    ? countsMapOrArr.map((c, i) => [i, c])
+    : Object.entries(countsMapOrArr).map(([k, v]) => [Number(k), Number(v)]);
 
-function makeEmptyDigitCount() {
-  const o = {};
-  for (let d = 0; d <= 9; d++) o[String(d)] = 0;
-  return o;
-}
-
-function makeEmptyGroupCount() {
-  const o = {};
-  for (let g = 1; g <= 5; g++) o[String(g)] = 0;
-  return o;
-}
-
-function rankKeysByCount(countObj, numeric = true) {
-  const keys = Object.keys(countObj);
-  keys.sort((a, b) => {
-    const da = countObj[a] ?? 0;
-    const db = countObj[b] ?? 0;
-    if (db !== da) return db - da;
-    // 동률이면 숫자 작은 순
-    return numeric ? Number(a) - Number(b) : String(a).localeCompare(String(b));
+  entries.sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return a[0] - b[0];
   });
-  return keys;
+
+  return entries.map(([digit, count]) => ({ digit, count }));
 }
 
 function buildFreq(draws) {
-  const groupCounts = makeEmptyGroupCount();
+  const groupCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
 
-  const digitCounts = {
-    pos1: makeEmptyDigitCount(),
-    pos2: makeEmptyDigitCount(),
-    pos3: makeEmptyDigitCount(),
-    pos4: makeEmptyDigitCount(),
-    pos5: makeEmptyDigitCount(),
-    pos6: makeEmptyDigitCount(),
-  };
+  const posNames = ["십만", "만", "천", "백", "십", "일"];
+  const posCounts = Array.from({ length: 6 }, () => Array(10).fill(0));
+  const overallCounts = Array(10).fill(0);
 
-  const bonusDigitCounts = {
-    pos1: makeEmptyDigitCount(),
-    pos2: makeEmptyDigitCount(),
-    pos3: makeEmptyDigitCount(),
-    pos4: makeEmptyDigitCount(),
-    pos5: makeEmptyDigitCount(),
-    pos6: makeEmptyDigitCount(),
-  };
+  const bonusPosCounts = Array.from({ length: 6 }, () => Array(10).fill(0));
+  const bonusOverallCounts = Array(10).fill(0);
 
-  // 3등은 끝 5자리(참고용): pos2~pos6를 tail로도 집계
-  const tail5Counts = {
-    pos2: makeEmptyDigitCount(),
-    pos3: makeEmptyDigitCount(),
-    pos4: makeEmptyDigitCount(),
-    pos5: makeEmptyDigitCount(),
-    pos6: makeEmptyDigitCount(),
-  };
+  const last5Counts = new Map();
 
   for (const d of draws) {
-    const g = String(d.first.group);
-    if (groupCounts[g] != null) inc(groupCounts, g);
+    const g = d.first.group;
+    groupCounts[g]++;
 
-    d.first.digits.forEach((x, i) => {
-      const k = `pos${i + 1}`;
-      inc(digitCounts[k], String(x));
-      if (i >= 1) inc(tail5Counts[k], String(x)); // pos2~pos6
-    });
+    for (let i = 0; i < 6; i++) {
+      const digit = d.first.digits[i];
+      posCounts[i][digit]++;
+      overallCounts[digit]++;
+    }
 
-    d.bonus.digits.forEach((x, i) => {
-      const k = `pos${i + 1}`;
-      inc(bonusDigitCounts[k], String(x));
-    });
+    const last5 = d.third?.last5;
+    if (last5) {
+      last5Counts.set(last5, (last5Counts.get(last5) || 0) + 1);
+    }
+
+    if (d.bonus?.digits) {
+      for (let i = 0; i < 6; i++) {
+        const digit = d.bonus.digits[i];
+        bonusPosCounts[i][digit]++;
+        bonusOverallCounts[digit]++;
+      }
+    }
   }
 
+  const positions = posCounts.map((arr, idx) => ({
+    name: posNames[idx],
+    counts: Object.fromEntries(arr.map((c, d) => [String(d), c])),
+    ranked: rankCounts(arr),
+  }));
+
+  const bonusPositions = bonusPosCounts.map((arr, idx) => ({
+    name: posNames[idx],
+    counts: Object.fromEntries(arr.map((c, d) => [String(d), c])),
+    ranked: rankCounts(arr),
+  }));
+
+  // last5 상위 20개만
+  const last5Ranked = [...last5Counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([last5, count]) => ({ last5, count }));
+
+  const rounds = draws.map((d) => d.round);
+  const maxRound = Math.max(...rounds);
+  const minRound = Math.min(...rounds);
+
   return {
-    generated_at: nowIso(),
-    rounds: draws.length,
-    max_round: draws.length ? Math.max(...draws.map((x) => x.round)) : null,
-    group_counts: groupCounts,
-    digit_counts: digitCounts,
-    bonus_digit_counts: bonusDigitCounts,
-    tail5_digit_counts: tail5Counts,
+    updatedAt: new Date().toISOString(),
     source: {
-      kind: "html-scrape",
-      bases: DEFAULT_BASES,
-      hint:
-        "연금복권720+ 회차별 결과 페이지(HTML)에서 1등(조+6자리)과 보너스(각조 6자리)를 파싱",
+      primary: TISTORY_SOURCE_URL,
+      note:
+        "동행복권(dhlottery) GitHub-hosted 러너 차단이 자주 발생해 공개 페이지(티스토리)에서 파싱",
+    },
+    rounds: { min: minRound, max: maxRound, count: draws.length },
+    group: {
+      counts: groupCounts,
+      ranked: rankCounts(
+        Object.fromEntries(Object.entries(groupCounts).map(([k, v]) => [k, v]))
+      ),
+    },
+    positions,
+    overall: {
+      counts: Object.fromEntries(overallCounts.map((c, d) => [String(d), c])),
+      ranked: rankCounts(overallCounts),
+    },
+    bonus: {
+      positions: bonusPositions,
+      overall: {
+        counts: Object.fromEntries(
+          bonusOverallCounts.map((c, d) => [String(d), c])
+        ),
+        ranked: rankCounts(bonusOverallCounts),
+      },
+    },
+    third: {
+      last5Top: last5Ranked,
     },
   };
 }
 
-function pickIndex(tier, pos, idx, len) {
-  // 무작위 없이 “회전”만: idx(사이클)로 순서를 바꿈
-  if (len <= 1) return 0;
+function generateRecommendations(freq, howMany, seedRound) {
+  // ✅ 무작위 없이 “seedRound(최신회차)” 기반으로 순환 생성
+  const groupRank = freq.group.ranked.map((x) => x.digit); // [group...]
+  const posRank = freq.positions.map((p) => p.ranked.map((x) => x.digit)); // 6 x 10
 
-  // tier별로 사용 범위를 달리
-  let span = len;
-  if (tier === "top") span = Math.min(1, len);
-  else if (tier === "topmix") span = Math.min(3, len); // 상위 3개
-  else if (tier === "mix") span = Math.min(6, len); // 상위 6개
-  else if (tier === "wide") span = len;
+  // 10개까지 커버하는 고정 패턴(무작위 X)
+  const patterns = [
+    { name: "상위", g: 0, o: [0, 0, 0, 0, 0, 0] },
+    { name: "상위-교차", g: 1, o: [1, 0, 1, 0, 1, 0] },
+    { name: "혼합-분산", g: 2, o: [0, 3, 1, 4, 2, 5] },
+    { name: "중위", g: 0, o: [5, 5, 5, 5, 5, 5] },
+    { name: "중위-교차", g: 3, o: [6, 5, 6, 5, 6, 5] },
+    { name: "하위-스파이스", g: 4, o: [8, 7, 6, 8, 7, 6] },
+    { name: "상위+보정", g: 1, o: [0, 1, 2, 1, 0, 2] },
+    { name: "혼합-교대", g: 2, o: [2, 6, 1, 7, 0, 8] },
+    { name: "끝자리강조", g: 0, o: [4, 4, 4, 4, 2, 0] },
+    { name: "분산-깊게", g: 3, o: [3, 7, 4, 8, 5, 9] },
+  ];
 
-  // 자리(pos)가 뒤로 갈수록(끝자리) 더 상위 쪽에 머물게(3등/4등 영향 고려)
-  const tailBias = pos >= 4 ? 0 : 1;
-  const base = (idx + pos * 2 + tailBias) % span;
-  return base;
-}
+  const base = seedRound % 10;
 
-function recommendFromFreq(freq, n, cycle) {
-  const groupRank = rankKeysByCount(freq.group_counts, true).map(Number);
+  const sets = [];
+  for (let i = 0; i < howMany; i++) {
+    const pat = patterns[i % patterns.length];
 
-  const digitRank = {};
-  for (let p = 1; p <= 6; p++) {
-    const k = `pos${p}`;
-    digitRank[k] = rankKeysByCount(freq.digit_counts[k], true).map(Number);
-  }
-
-  const tier = n === 1 ? "top" : n === 5 ? "topmix" : "mix";
-
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const idx = cycle + i;
-    const group = groupRank[idx % groupRank.length];
+    const group = groupRank[(pat.g + (seedRound % groupRank.length)) % groupRank.length];
 
     const digits = [];
-    for (let p = 1; p <= 6; p++) {
-      const r = digitRank[`pos${p}`];
-      const pi = pickIndex(tier, p, idx, r.length);
-      digits.push(r[pi]);
+    for (let p = 0; p < 6; p++) {
+      const rankIdx = (pat.o[p] + base + i) % 10;
+      digits.push(posRank[p][rankIdx]);
     }
 
-    out.push({ group, digits });
+    // 중복 세트 방지(동일하면 마지막 자리만 한 칸 이동)
+    const key = `${group}-${digits.join("")}`;
+    if (sets.some((s) => `${s.group}-${s.number}` === key)) {
+      digits[5] = posRank[5][(digits[5] + 1) % 10];
+    }
+
+    sets.push({
+      label: `${i + 1}`,
+      mode: pat.name,
+      group,
+      digits,
+      number: digits.join(""),
+    });
   }
-  return out;
+  return sets;
 }
 
-function formatTicket(t) {
-  return `${t.group}조 ${t.digits.join("")}`;
-}
+function toMarkdown(recos, freq) {
+  const latest = freq.rounds.max;
+  const updated = freq.updatedAt;
 
-function formatMd(freq, rec1, rec5, rec10) {
-  const maxRound = freq.max_round ?? "-";
-  const gen = freq.generated_at ?? "-";
-  return [
-    `## 연금복권720+ 빈도 기반 추천 (비무작위)`,
-    ``,
-    `- 데이터 기준: 누적 ${freq.rounds}회 (최대 회차: ${maxRound})`,
-    `- 생성 시각: ${gen}`,
-    ``,
-    `### ✅ 1개 추천`,
-    rec1.map((t) => `- \`${formatTicket(t)}\``).join("\n"),
-    ``,
-    `### ✅ 5개 추천`,
-    rec5.map((t) => `- \`${formatTicket(t)}\``).join("\n"),
-    ``,
-    `### ✅ 10개 추천`,
-    rec10.map((t) => `- \`${formatTicket(t)}\``).join("\n"),
-    ``,
-    `> 참고: 연금720+의 **2등은 1등과 조만 다른 동일 6자리**, **3등은 끝 5자리 일치** 조건입니다. :contentReference[oaicite:2]{index=2}`,
-    `> 과거 빈도는 미래 당첨을 보장하지 않습니다.`,
-  ].join("\n");
-}
-
-async function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function parseArgs(argv) {
-  const args = {
-    noUpdate: false,
-    recommend: 0,
-    format: "text", // text | md
-  };
-
-  for (let i = 2; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--no-update") args.noUpdate = true;
-    else if (a === "--recommend") args.recommend = Number(argv[++i] ?? "0");
-    else if (a === "--format") args.format = String(argv[++i] ?? "text");
+  const lines = [];
+  lines.push(`### 연금복권720+ 빈도 기반 추천 (무작위 X)`);
+  lines.push(`- 기준 데이터: 1등 조/6자리 + 보너스 (공개 페이지 파싱)`);
+  lines.push(`- 최신회차(seed): **${latest}회**`);
+  lines.push(`- 갱신시각: ${updated}`);
+  lines.push("");
+  for (const r of recos) {
+    lines.push(`- **${r.label}. ${r.group}조 ${r.number}**  _(패턴: ${r.mode})_`);
   }
-  return args;
+  lines.push("");
+  lines.push(`> 주의: 과거 빈도는 미래 당첨을 보장하지 않습니다.`);
+  return lines.join("\n");
 }
 
 async function main() {
-  const args = parseArgs(process.argv);
+  const args = process.argv.slice(2);
+  const noWrite = args.includes("--no-write");
+  const recommendIdx = args.indexOf("--recommend");
+  const recommendN =
+    recommendIdx >= 0 ? Math.max(1, Math.min(10, Number(args[recommendIdx + 1] || "5"))) : 0;
 
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await ensureDir(DATA_DIR);
 
-  // draws 로드
-  let draws = [];
-  if (await exists(DRAWS_PATH)) {
-    const s = await fs.readFile(DRAWS_PATH, "utf-8");
-    draws = safeJsonParse(s, []);
+  // 1) 티스토리에서 최신 목록 파싱
+  const fetched = await fetchDrawsFromTistory();
+
+  // 2) 기존 데이터와 병합(회차 기준)
+  const existing = await readJson(DRAWS_PATH, { draws: [], updatedAt: null, source: null });
+  const map = new Map();
+  for (const d of existing.draws || []) map.set(d.round, d);
+  for (const d of fetched) map.set(d.round, d);
+
+  const merged = [...map.values()].sort((a, b) => b.round - a.round);
+
+  const drawsObj = {
+    updatedAt: new Date().toISOString(),
+    source: { primary: TISTORY_SOURCE_URL },
+    draws: merged,
+  };
+
+  const freq = buildFreq(merged);
+
+  if (!noWrite) {
+    await writeJson(DRAWS_PATH, drawsObj);
+    await writeJson(FREQ_PATH, freq);
+    console.log(`[OK] Updated: ${path.relative(ROOT, DRAWS_PATH)}, ${path.relative(ROOT, FREQ_PATH)}`);
+    console.log(`[OK] Rounds: ${freq.rounds.min} ~ ${freq.rounds.max} (count=${freq.rounds.count})`);
   }
 
-  // 업데이트(스크래핑)
-  if (!args.noUpdate) {
-    const haveMax = draws.length ? Math.max(...draws.map((d) => d.round)) : 0;
-    let next = haveMax + 1;
-
-    // 최초 실행이면 1회부터
-    if (!haveMax) next = 1;
-
-    let fetched = 0;
-
-    // 최신까지 “가능한 만큼” 연속으로 시도하다가 실패(404/파싱실패)하면 종료
-    while (true) {
-      let ok = false;
-      let lastErr = null;
-
-      for (const base of DEFAULT_BASES) {
-        const url = `${base}${next}`;
-        try {
-          const { status, text } = await fetchText(url);
-
-          if (status === 404) {
-            lastErr = new Error("404");
-            ok = false;
-            break;
-          }
-
-          if (status < 200 || status >= 300) {
-            lastErr = new Error(`HTTP ${status}`);
-            continue;
-          }
-
-          const parsed = parseRoundHtml(next, text);
-          draws.push(parsed);
-          ok = true;
-          fetched++;
-          break;
-        } catch (e) {
-          lastErr = e;
-        }
-      }
-
-      if (!ok) {
-        // 첫 회차부터 긁는 중이면(초기 세팅) 404가 나오기 전까지는 계속 가야 하는데,
-        // 연금720은 1부터 시작하니 next가 너무 커졌다면 중단이 맞음.
-        // 여기서는 “연속 업데이트” 목적이므로 실패하면 종료.
-        if (lastErr && String(lastErr.message) !== "404") {
-          // 차단/파싱실패 등은 원인을 드러내고 종료
-          if (fetched === 0 && draws.length === 0) throw lastErr;
-        }
-        break;
-      }
-
-      next += 1;
-      // 너무 빠른 연타 방지(서버 부담/차단 완화)
-      await sleep(200);
-    }
-
-    // 정렬/중복 제거
-    const map = new Map(draws.map((d) => [d.round, d]));
-    draws = [...map.values()].sort((a, b) => a.round - b.round);
-
-    await fs.writeFile(DRAWS_PATH, JSON.stringify(draws, null, 2), "utf-8");
-  }
-
-  // freq 생성
-  const freq = buildFreq(draws);
-  await fs.writeFile(FREQ_PATH, JSON.stringify(freq, null, 2), "utf-8");
-
-  // 추천 출력(이슈용)
-  if (args.recommend > 0) {
-    const cycle = 0; // 이슈 댓글은 고정(비무작위)
-    const rec1 = recommendFromFreq(freq, 1, cycle);
-    const rec5 = recommendFromFreq(freq, 5, cycle);
-    const rec10 = recommendFromFreq(freq, 10, cycle);
-
-    if (args.format === "md") {
-      console.log(formatMd(freq, rec1, rec5, rec10));
-    } else {
-      console.log("[1개]", rec1.map(formatTicket).join(" / "));
-      console.log("[5개]", rec5.map(formatTicket).join(" / "));
-      console.log("[10개]", rec10.map(formatTicket).join(" / "));
-    }
+  if (recommendN > 0) {
+    const seed = freq.rounds.max;
+    const recos = generateRecommendations(freq, recommendN, seed);
+    const md = toMarkdown(recos, freq);
+    console.log(md);
   }
 }
 
