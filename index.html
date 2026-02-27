@@ -6,354 +6,234 @@
   <title>연금복권720+ 빈도 기반 추천기</title>
   <style>
     :root{
-      --bg:#0b1020; --card:#121a33; --card2:#0f1730;
-      --text:#e9eeff; --muted:#aab4de; --line:#24305f;
-      --accent:#7aa2ff; --good:#35d399; --warn:#ffd166;
-      --shadow: 0 10px 30px rgba(0,0,0,.35);
-      --r:16px;
+      --bg:#0b0f18; --card:#111a2b; --line:#1e2a44; --txt:#eaf0ff; --muted:#a9b6d6;
+      --accent:#7aa7ff; --good:#3ddc97; --warn:#ffcc66;
+      --g:#ff6b6b;
+      --p0:#6aa3ff; --p1:#7cddff; --p2:#7dffb2; --p3:#ffe066; --p4:#ff9f7a; --p5:#c59cff;
     }
     *{box-sizing:border-box}
-    body{
-      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
-      background: radial-gradient(1200px 700px at 20% 0%, #15204a 0%, var(--bg) 50%, #070a14 100%);
-      color:var(--text);
-    }
-    a{color:var(--accent); text-decoration:none}
-    .wrap{max-width:980px; margin:0 auto; padding:20px}
-    header{
-      display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
-      padding:18px 18px 14px; border:1px solid var(--line); border-radius:var(--r);
-      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-      box-shadow:var(--shadow);
-    }
-    .title{display:flex; flex-direction:column; gap:6px}
-    .title h1{margin:0; font-size:18px; letter-spacing:-.2px}
-    .sub{margin:0; color:var(--muted); font-size:13px; line-height:1.35}
-    .meta{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end}
-    .pill{
-      font-size:12px; color:var(--muted);
-      padding:8px 10px; border:1px solid var(--line); border-radius:999px;
-      background: rgba(0,0,0,.18);
-    }
-
-    .panel{
-      margin-top:14px;
-      display:grid; gap:12px;
-      grid-template-columns: 1fr;
-    }
-    .card{
-      border:1px solid var(--line); border-radius:var(--r);
-      background: rgba(18,26,51,.65);
-      box-shadow:var(--shadow);
-      overflow:hidden;
-    }
-    .card .hd{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      padding:14px 14px;
-      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0));
-      border-bottom:1px solid rgba(36,48,95,.55);
-    }
-    .card .hd b{font-size:14px}
-    .card .bd{padding:14px}
-    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
-
-    .btns{display:flex; gap:10px; flex-wrap:wrap}
+    body{margin:0;background:radial-gradient(1200px 600px at 20% 0%, #142246 0%, var(--bg) 55%); color:var(--txt); font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;}
+    a{color:var(--accent);text-decoration:none}
+    .wrap{max-width:980px;margin:0 auto;padding:18px}
+    .title{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+    .title h1{font-size:20px;margin:0}
+    .title .sub{color:var(--muted);font-size:13px;line-height:1.35}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:900px){.grid{grid-template-columns:1.2fr .8fr}}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .btns{display:flex;gap:10px;flex-wrap:wrap}
     button{
-      cursor:pointer; border:1px solid rgba(122,162,255,.35);
-      background: rgba(122,162,255,.12);
-      color:var(--text);
-      padding:10px 12px; border-radius:12px; font-weight:700; font-size:13px;
-      transition: transform .06s ease, background .2s ease;
+      appearance:none;border:1px solid var(--line); background:#0f1729; color:var(--txt);
+      padding:10px 12px;border-radius:12px; font-weight:700; cursor:pointer;
+      transition:transform .06s ease, border-color .2s ease, background .2s ease;
     }
-    button:active{transform: scale(.98)}
-    button.secondary{
-      border:1px solid rgba(255,255,255,.18);
-      background: rgba(255,255,255,.06);
-      color:var(--muted);
-      font-weight:600;
-    }
-
-    .grid{
-      display:grid; gap:10px;
-      grid-template-columns: repeat(1, 1fr);
-    }
-    @media (min-width: 720px){
-      .grid{grid-template-columns: repeat(2, 1fr);}
-    }
-
-    .ticket{
-      padding:12px;
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.18);
-      border-radius:14px;
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    .left{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
-    .group{
-      min-width:52px;
-      display:inline-flex; align-items:center; justify-content:center;
-      padding:8px 10px; border-radius:999px;
-      font-weight:900; font-size:13px;
-      border:1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.06);
-    }
-    .balls{display:flex; gap:6px}
+    button:hover{border-color:#2c3e69}
+    button:active{transform:translateY(1px)}
+    .pill{display:inline-flex;gap:8px;align-items:center;padding:7px 10px;border-radius:999px;border:1px solid var(--line); background:#0f1729;color:var(--muted);font-size:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .sets{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .set{border:1px solid var(--line); background:#0f1729; border-radius:14px; padding:12px}
+    .setHead{display:flex;justify-content:space-between;gap:10px;align-items:center; flex-wrap:wrap}
+    .tag{font-size:12px;color:var(--muted)}
+    .balls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
     .ball{
-      width:34px; height:34px; border-radius:999px;
-      display:inline-flex; align-items:center; justify-content:center;
-      font-weight:900; font-size:15px;
-      border:1px solid rgba(255,255,255,.14);
-      box-shadow: inset 0 0 0 1px rgba(0,0,0,.18);
+      width:40px;height:40px;border-radius:999px;display:flex;align-items:center;justify-content:center;
+      color:#0b0f18;font-weight:900;
+      box-shadow:0 8px 18px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.10);
       user-select:none;
     }
-    .ball.roll{animation: pop .35s ease both}
-    @keyframes pop{
-      0%{transform:translateY(2px) scale(.98); filter:brightness(.95)}
-      60%{transform:translateY(-1px) scale(1.03); filter:brightness(1.12)}
-      100%{transform:translateY(0) scale(1); filter:brightness(1)}
-    }
-
-    /* digit color (0~9) */
-    .d0{background:#2dd4bf1f; color:#bff7ef}
-    .d1{background:#60a5fa22; color:#cfe5ff}
-    .d2{background:#a78bfa22; color:#eadcff}
-    .d3{background:#fb718522; color:#ffe0e6}
-    .d4{background:#fbbf2422; color:#fff1cc}
-    .d5{background:#34d39922; color:#d7ffef}
-    .d6{background:#22c55e22; color:#d5ffe4}
-    .d7{background:#f9731622; color:#ffe4d1}
-    .d8{background:#e879f922; color:#ffe3ff}
-    .d9{background:#94a3b822; color:#edf2ff}
-
-    /* group color (1~5) */
-    .g1{background:rgba(96,165,250,.16); color:#d8ecff}
-    .g2{background:rgba(167,139,250,.16); color:#f1e9ff}
-    .g3{background:rgba(251,113,133,.16); color:#ffe3ea}
-    .g4{background:rgba(251,191,36,.16); color:#fff0c9}
-    .g5{background:rgba(52,211,153,.16); color:#d9fff0}
-
-    .note{
-      margin-top:10px;
-      font-size:12px; color:var(--muted); line-height:1.45;
-      padding:10px 12px; border:1px dashed rgba(255,255,255,.16);
-      border-radius:12px; background: rgba(0,0,0,.15);
-    }
-    .err{
-      padding:12px; border-radius:14px;
-      border:1px solid rgba(255,209,102,.35);
-      background: rgba(255,209,102,.12);
-      color:#ffe9b7;
-      line-height:1.45;
-      font-size:13px;
-    }
-    .small{font-size:12px; color:var(--muted)}
+    .ball.g{background:var(--g); color:#0b0f18}
+    .ball.p0{background:var(--p0)}
+    .ball.p1{background:var(--p1)}
+    .ball.p2{background:var(--p2)}
+    .ball.p3{background:var(--p3)}
+    .ball.p4{background:var(--p4)}
+    .ball.p5{background:var(--p5)}
+    .hint{font-size:12px;color:var(--muted);line-height:1.45}
+    .small{font-size:12px;color:var(--muted)}
+    .hr{height:1px;background:var(--line);margin:12px 0}
+    .freq{display:grid;grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:10px}
+    .freq .cell{border:1px solid var(--line); background:#0f1729; border-radius:12px; padding:10px}
+    .cell .k{font-size:12px;color:var(--muted)}
+    .cell .v{font-size:16px;font-weight:800;margin-top:4px}
+    .warn{color:var(--warn);font-weight:800}
+    .good{color:var(--good);font-weight:800}
   </style>
 </head>
-
 <body>
   <div class="wrap">
-    <header>
-      <div class="title">
-        <h1>연금복권720+ 빈도 기반 추천기</h1>
-        <p class="sub">
-          브라우저에서 “직접 API 호출” 없이, 저장소의 <code>data/yeongeum720_*.json</code>만 읽어 추천합니다. (무작위 사용 안 함)
-        </p>
+    <div class="title">
+      <h1>연금복권720+ 빈도 기반 추천기 (무작위 X)</h1>
+      <div class="sub">
+        역대 당첨(1등 조/6자리 + 보너스)을 집계한 <span class="good">빈도 기반</span> 추천이야.  
+        <span class="warn">과거 빈도는 미래 당첨을 보장하지 않아</span>. 그래도 “데이터 기반”으로 보기 좋게 뽑아준다.
       </div>
-      <div class="meta">
-        <div class="pill" id="pill-round">회차: -</div>
-        <div class="pill" id="pill-updated">업데이트: -</div>
-        <a class="pill" href="https://www.dhlottery.co.kr/pt720/intro" target="_blank" rel="noopener">공식 안내</a>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <div class="pill">데이터 갱신: <span id="updatedAt" class="mono">로딩중…</span></div>
+          <div class="pill">회차: <span id="roundRange" class="mono">로딩중…</span></div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="btns">
+          <button id="b1">번호 1개 추천</button>
+          <button id="b5">번호 5개 추천</button>
+          <button id="b10">번호 10개 추천</button>
+        </div>
+
+        <div class="hint" style="margin-top:10px">
+          버튼을 누를 때마다 <b>무작위가 아니라</b>, “최신회차(seed) + 클릭 순번(cycle)” 규칙으로 세트가 <b>순환</b>하면서 바뀐다.
+        </div>
+
+        <div id="sets" class="sets"></div>
       </div>
-    </header>
 
-    <div class="panel">
-      <section class="card">
-        <div class="hd">
-          <b>추천 생성</b>
-          <span class="small">버튼을 눌러도 “랜덤”이 아니라, 빈도 순위를 “사이클 회전”해 다른 조합을 보여줍니다.</span>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+          <div style="font-size:14px;font-weight:900">요약(상위 빈도 힌트)</div>
+          <div class="small">표시는 “상위 1~2순위”만 빠르게 보여줌</div>
         </div>
-        <div class="bd">
-          <div class="row">
-            <div class="btns">
-              <button id="b1">번호 1개 추천</button>
-              <button id="b5">번호 5개 추천</button>
-              <button id="b10">번호 10개 추천</button>
-              <button class="secondary" id="bReset">사이클 리셋</button>
-            </div>
-          </div>
-          <div class="note">
-            ※ 연금720+는 <b>2등이 1등과 조만 다른 동일 6자리</b>, <b>3등이 1등 번호 기준 끝 5자리</b> 조건입니다.
-            그래서 본 추천기는 <b>자리별(십만~일) 출현 빈도</b>를 중심으로 조합을 만듭니다.
-          </div>
-        </div>
-      </section>
 
-      <section class="card">
-        <div class="hd">
-          <b>추천 결과</b>
-          <span class="small" id="status">데이터 로딩 중…</span>
+        <div id="summary" class="freq"></div>
+
+        <div class="hr"></div>
+        <div class="hint">
+          소스: 공개 페이지 파싱(동행복권 GitHub IP 차단 이슈 회피).  
+          데이터가 갱신 안 되면 소스 페이지 구조가 바뀐 거라 스크립트만 살짝 손보면 된다.
         </div>
-        <div class="bd">
-          <div id="out" class="grid"></div>
-          <div id="err" class="err" style="display:none;"></div>
-        </div>
-      </section>
+      </div>
     </div>
   </div>
 
 <script>
-  const DRAWS_URL = "../data/yeongeum720_draws.json";
-  const FREQ_URL  = "../data/yeongeum720_freq.json";
+  const $ = (s) => document.querySelector(s);
 
-  let draws = null;
-  let freq = null;
+  const PATH_FREQ  = "../data/yeongeum720_freq.json";
+  const PATH_DRAWS = "../data/yeongeum720_draws.json";
 
-  const $ = (sel) => document.querySelector(sel);
+  function cacheBust(url){ return url + (url.includes("?") ? "&" : "?") + "v=" + Date.now(); }
 
-  function setText(id, t){ $(id).textContent = t; }
+  function getCycleKey(n){ return "yeongeum720_cycle_" + n; }
+  function getCycle(n){ return Number(localStorage.getItem(getCycleKey(n)) || "0"); }
+  function setCycle(n, v){ localStorage.setItem(getCycleKey(n), String(v)); }
 
-  function readCycle(key){
-    const v = localStorage.getItem(key);
-    const n = v ? parseInt(v, 10) : 0;
-    return Number.isFinite(n) ? n : 0;
-  }
-  function writeCycle(key, n){
-    localStorage.setItem(key, String(n));
-  }
+  function generateSets(freq, howMany, cycle){
+    const seedRound = freq.rounds.max;
+    const groupRank = freq.group.ranked.map(x => x.digit);
+    const posRank = freq.positions.map(p => p.ranked.map(x => x.digit)); // 6 x 10
 
-  function rankKeysByCount(obj){
-    const keys = Object.keys(obj);
-    keys.sort((a,b)=>{
-      const da = obj[a] ?? 0;
-      const db = obj[b] ?? 0;
-      if (db !== da) return db - da;
-      return Number(a) - Number(b);
-    });
-    return keys.map(Number);
-  }
+    const patterns = [
+      { name: "상위", g: 0, o: [0,0,0,0,0,0] },
+      { name: "상위-교차", g: 1, o: [1,0,1,0,1,0] },
+      { name: "혼합-분산", g: 2, o: [0,3,1,4,2,5] },
+      { name: "중위", g: 0, o: [5,5,5,5,5,5] },
+      { name: "중위-교차", g: 3, o: [6,5,6,5,6,5] },
+      { name: "하위-스파이스", g: 4, o: [8,7,6,8,7,6] },
+      { name: "상위+보정", g: 1, o: [0,1,2,1,0,2] },
+      { name: "혼합-교대", g: 2, o: [2,6,1,7,0,8] },
+      { name: "끝자리강조", g: 0, o: [4,4,4,4,2,0] },
+      { name: "분산-깊게", g: 3, o: [3,7,4,8,5,9] },
+    ];
 
-  function pickIndex(tier, pos, idx, len){
-    if (len <= 1) return 0;
-    let span = len;
-    if (tier === "top") span = Math.min(1, len);
-    else if (tier === "topmix") span = Math.min(3, len);
-    else if (tier === "mix") span = Math.min(6, len);
-    else span = len;
-
-    const tailBias = (pos >= 4) ? 0 : 1;
-    return (idx + pos * 2 + tailBias) % span;
-  }
-
-  function recommend(n){
-    const groupRank = rankKeysByCount(freq.group_counts);
-    const digitRank = {};
-    for(let p=1;p<=6;p++){
-      digitRank["pos"+p] = rankKeysByCount(freq.digit_counts["pos"+p]);
-    }
-
-    const tier = (n===1) ? "top" : (n===5 ? "topmix" : "mix");
-
-    const cycleKey = "yeongeum720_cycle_" + n;
-    const cycle = readCycle(cycleKey);
+    const base = (seedRound + cycle) % 10;
 
     const out = [];
-    for(let i=0;i<n;i++){
-      const idx = cycle + i;
-      const group = groupRank[idx % groupRank.length];
+    for(let i=0;i<howMany;i++){
+      const pat = patterns[i % patterns.length];
+      const group = groupRank[(pat.g + (seedRound % groupRank.length)) % groupRank.length];
 
       const digits = [];
-      for(let p=1;p<=6;p++){
-        const r = digitRank["pos"+p];
-        const pi = pickIndex(tier, p, idx, r.length);
-        digits.push(r[pi]);
+      for(let p=0;p<6;p++){
+        const rankIdx = (pat.o[p] + base + i) % 10;
+        digits.push(posRank[p][rankIdx]);
       }
-      out.push({group, digits});
-    }
 
-    // 다음 클릭 때 바뀌게 “사이클” 증가
-    writeCycle(cycleKey, cycle + n);
+      const key = `${group}-${digits.join("")}`;
+      if(out.some(s => `${s.group}-${s.number}` === key)){
+        digits[5] = posRank[5][(rankIdx + 1) % 10];
+      }
+
+      out.push({ label: i+1, mode: pat.name, group, digits, number: digits.join("") });
+    }
     return out;
   }
 
-  function ballEl(d){
-    const s = document.createElement("span");
-    s.className = "ball d" + d;
-    s.textContent = String(d);
-    return s;
-  }
+  function renderSets(sets){
+    const el = $("#sets");
+    el.innerHTML = "";
 
-  function ticketEl(t, animate=true){
-    const card = document.createElement("div");
-    card.className = "ticket";
+    sets.forEach(s => {
+      const div = document.createElement("div");
+      div.className = "set";
 
-    const left = document.createElement("div");
-    left.className = "left";
-
-    const g = document.createElement("span");
-    g.className = "group g" + t.group;
-    g.textContent = t.group + "조";
-
-    const balls = document.createElement("div");
-    balls.className = "balls";
-
-    // “실시간 호출” 느낌: 최종 숫자를 바로 보여주되, 잠깐 롤 애니메이션
-    t.digits.forEach((d, i)=>{
-      const b = ballEl(d);
-      if (animate){
-        b.classList.add("roll");
-        b.style.animationDelay = (i * 40) + "ms";
-      }
-      balls.appendChild(b);
+      div.innerHTML = `
+        <div class="setHead">
+          <div><b>${s.label}.</b> <span class="mono">${s.group}조 ${s.number}</span></div>
+          <div class="tag">패턴: ${s.mode}</div>
+        </div>
+        <div class="balls">
+          <div class="ball g" title="조">${s.group}조</div>
+          <div class="ball p0" title="십만">${s.digits[0]}</div>
+          <div class="ball p1" title="만">${s.digits[1]}</div>
+          <div class="ball p2" title="천">${s.digits[2]}</div>
+          <div class="ball p3" title="백">${s.digits[3]}</div>
+          <div class="ball p4" title="십">${s.digits[4]}</div>
+          <div class="ball p5" title="일">${s.digits[5]}</div>
+        </div>
+      `;
+      el.appendChild(div);
     });
-
-    left.appendChild(g);
-    left.appendChild(balls);
-
-    const right = document.createElement("div");
-    right.className = "small";
-    right.textContent = (t.group + "조 " + t.digits.join(""));
-
-    card.appendChild(left);
-    card.appendChild(right);
-    return card;
   }
 
-  function render(list){
-    const out = $("#out");
-    out.innerHTML = "";
-    list.forEach((t)=> out.appendChild(ticketEl(t, true)));
+  function renderSummary(freq){
+    const topGroup = freq.group.ranked[0];
+    const posTop = freq.positions.map(p => p.ranked[0]);
+    const summary = $("#summary");
+    summary.innerHTML = "";
+
+    const cells = [
+      { k: "최빈 조(1등)", v: `${topGroup.digit}조 (${topGroup.count})` },
+      { k: "십만(Top)", v: `${posTop[0].digit} (${posTop[0].count})` },
+      { k: "만(Top)", v: `${posTop[1].digit} (${posTop[1].count})` },
+      { k: "천(Top)", v: `${posTop[2].digit} (${posTop[2].count})` },
+      { k: "끝자리(Top)", v: `${posTop[5].digit} (${posTop[5].count})` },
+    ];
+
+    cells.forEach(c => {
+      const d = document.createElement("div");
+      d.className = "cell";
+      d.innerHTML = `<div class="k">${c.k}</div><div class="v mono">${c.v}</div>`;
+      summary.appendChild(d);
+    });
   }
 
   async function load(){
-    try{
-      const [dRes, fRes] = await Promise.all([fetch(DRAWS_URL), fetch(FREQ_URL)]);
-      if(!dRes.ok || !fRes.ok) throw new Error("데이터 JSON을 불러오지 못했습니다. (data 폴더 업데이트 필요)");
-      draws = await dRes.json();
-      freq = await fRes.json();
+    const freq = await fetch(cacheBust(PATH_FREQ)).then(r => r.json());
+    $("#updatedAt").textContent = freq.updatedAt;
+    $("#roundRange").textContent = `${freq.rounds.min} ~ ${freq.rounds.max} (총 ${freq.rounds.count}회)`;
+    renderSummary(freq);
 
-      const maxRound = freq.max_round ?? "-";
-      setText("#pill-round", "회차: " + maxRound);
-      setText("#pill-updated", "업데이트: " + (freq.generated_at ? freq.generated_at.replace("T"," ").replace("Z"," UTC") : "-"));
-      setText("#status", "준비 완료");
-    }catch(e){
-      $("#err").style.display = "block";
-      $("#err").textContent =
-        "데이터가 없습니다 / 로딩 실패\n\n" +
-        "- 먼저 GitHub Actions에서 update-yeongeum720 워크플로우를 1회 실행해 data/*.json을 생성하세요.\n" +
-        "- 에러: " + (e?.message || e);
-      setText("#status", "오류");
+    function run(n){
+      const cycle = getCycle(n) + 1;
+      setCycle(n, cycle);
+      const sets = generateSets(freq, n, cycle);
+      renderSets(sets);
     }
+
+    $("#b1").onclick  = () => run(1);
+    $("#b5").onclick  = () => run(5);
+    $("#b10").onclick = () => run(10);
   }
 
-  $("#b1").addEventListener("click", ()=>{ if(!freq) return; render(recommend(1)); });
-  $("#b5").addEventListener("click", ()=>{ if(!freq) return; render(recommend(5)); });
-  $("#b10").addEventListener("click", ()=>{ if(!freq) return; render(recommend(10)); });
-  $("#bReset").addEventListener("click", ()=>{
-    ["1","5","10"].forEach(n => localStorage.removeItem("yeongeum720_cycle_"+n));
-    setText("#status", "사이클 리셋 완료");
+  load().catch(e => {
+    $("#updatedAt").textContent = "로딩 실패";
+    $("#sets").innerHTML = `<div class="hint">데이터 로딩 실패: ${String(e)}</div>`;
   });
-
-  load();
 </script>
 </body>
 </html>
