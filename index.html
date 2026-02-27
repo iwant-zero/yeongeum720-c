@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>연금복권720+ 빈도 기반 추천기</title>
+  <style>
+    :root{
+      --bg:#0b1020; --card:#121a33; --card2:#0f1730;
+      --text:#e9eeff; --muted:#aab4de; --line:#24305f;
+      --accent:#7aa2ff; --good:#35d399; --warn:#ffd166;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --r:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
+      background: radial-gradient(1200px 700px at 20% 0%, #15204a 0%, var(--bg) 50%, #070a14 100%);
+      color:var(--text);
+    }
+    a{color:var(--accent); text-decoration:none}
+    .wrap{max-width:980px; margin:0 auto; padding:20px}
+    header{
+      display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+      padding:18px 18px 14px; border:1px solid var(--line); border-radius:var(--r);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      box-shadow:var(--shadow);
+    }
+    .title{display:flex; flex-direction:column; gap:6px}
+    .title h1{margin:0; font-size:18px; letter-spacing:-.2px}
+    .sub{margin:0; color:var(--muted); font-size:13px; line-height:1.35}
+    .meta{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:flex-end}
+    .pill{
+      font-size:12px; color:var(--muted);
+      padding:8px 10px; border:1px solid var(--line); border-radius:999px;
+      background: rgba(0,0,0,.18);
+    }
+
+    .panel{
+      margin-top:14px;
+      display:grid; gap:12px;
+      grid-template-columns: 1fr;
+    }
+    .card{
+      border:1px solid var(--line); border-radius:var(--r);
+      background: rgba(18,26,51,.65);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .card .hd{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:14px 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0));
+      border-bottom:1px solid rgba(36,48,95,.55);
+    }
+    .card .hd b{font-size:14px}
+    .card .bd{padding:14px}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+
+    .btns{display:flex; gap:10px; flex-wrap:wrap}
+    button{
+      cursor:pointer; border:1px solid rgba(122,162,255,.35);
+      background: rgba(122,162,255,.12);
+      color:var(--text);
+      padding:10px 12px; border-radius:12px; font-weight:700; font-size:13px;
+      transition: transform .06s ease, background .2s ease;
+    }
+    button:active{transform: scale(.98)}
+    button.secondary{
+      border:1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      color:var(--muted);
+      font-weight:600;
+    }
+
+    .grid{
+      display:grid; gap:10px;
+      grid-template-columns: repeat(1, 1fr);
+    }
+    @media (min-width: 720px){
+      .grid{grid-template-columns: repeat(2, 1fr);}
+    }
+
+    .ticket{
+      padding:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius:14px;
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .left{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+    .group{
+      min-width:52px;
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:8px 10px; border-radius:999px;
+      font-weight:900; font-size:13px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+    }
+    .balls{display:flex; gap:6px}
+    .ball{
+      width:34px; height:34px; border-radius:999px;
+      display:inline-flex; align-items:center; justify-content:center;
+      font-weight:900; font-size:15px;
+      border:1px solid rgba(255,255,255,.14);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.18);
+      user-select:none;
+    }
+    .ball.roll{animation: pop .35s ease both}
+    @keyframes pop{
+      0%{transform:translateY(2px) scale(.98); filter:brightness(.95)}
+      60%{transform:translateY(-1px) scale(1.03); filter:brightness(1.12)}
+      100%{transform:translateY(0) scale(1); filter:brightness(1)}
+    }
+
+    /* digit color (0~9) */
+    .d0{background:#2dd4bf1f; color:#bff7ef}
+    .d1{background:#60a5fa22; color:#cfe5ff}
+    .d2{background:#a78bfa22; color:#eadcff}
+    .d3{background:#fb718522; color:#ffe0e6}
+    .d4{background:#fbbf2422; color:#fff1cc}
+    .d5{background:#34d39922; color:#d7ffef}
+    .d6{background:#22c55e22; color:#d5ffe4}
+    .d7{background:#f9731622; color:#ffe4d1}
+    .d8{background:#e879f922; color:#ffe3ff}
+    .d9{background:#94a3b822; color:#edf2ff}
+
+    /* group color (1~5) */
+    .g1{background:rgba(96,165,250,.16); color:#d8ecff}
+    .g2{background:rgba(167,139,250,.16); color:#f1e9ff}
+    .g3{background:rgba(251,113,133,.16); color:#ffe3ea}
+    .g4{background:rgba(251,191,36,.16); color:#fff0c9}
+    .g5{background:rgba(52,211,153,.16); color:#d9fff0}
+
+    .note{
+      margin-top:10px;
+      font-size:12px; color:var(--muted); line-height:1.45;
+      padding:10px 12px; border:1px dashed rgba(255,255,255,.16);
+      border-radius:12px; background: rgba(0,0,0,.15);
+    }
+    .err{
+      padding:12px; border-radius:14px;
+      border:1px solid rgba(255,209,102,.35);
+      background: rgba(255,209,102,.12);
+      color:#ffe9b7;
+      line-height:1.45;
+      font-size:13px;
+    }
+    .small{font-size:12px; color:var(--muted)}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <h1>연금복권720+ 빈도 기반 추천기</h1>
+        <p class="sub">
+          브라우저에서 “직접 API 호출” 없이, 저장소의 <code>data/yeongeum720_*.json</code>만 읽어 추천합니다. (무작위 사용 안 함)
+        </p>
+      </div>
+      <div class="meta">
+        <div class="pill" id="pill-round">회차: -</div>
+        <div class="pill" id="pill-updated">업데이트: -</div>
+        <a class="pill" href="https://www.dhlottery.co.kr/pt720/intro" target="_blank" rel="noopener">공식 안내</a>
+      </div>
+    </header>
+
+    <div class="panel">
+      <section class="card">
+        <div class="hd">
+          <b>추천 생성</b>
+          <span class="small">버튼을 눌러도 “랜덤”이 아니라, 빈도 순위를 “사이클 회전”해 다른 조합을 보여줍니다.</span>
+        </div>
+        <div class="bd">
+          <div class="row">
+            <div class="btns">
+              <button id="b1">번호 1개 추천</button>
+              <button id="b5">번호 5개 추천</button>
+              <button id="b10">번호 10개 추천</button>
+              <button class="secondary" id="bReset">사이클 리셋</button>
+            </div>
+          </div>
+          <div class="note">
+            ※ 연금720+는 <b>2등이 1등과 조만 다른 동일 6자리</b>, <b>3등이 1등 번호 기준 끝 5자리</b> 조건입니다.
+            그래서 본 추천기는 <b>자리별(십만~일) 출현 빈도</b>를 중심으로 조합을 만듭니다.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="hd">
+          <b>추천 결과</b>
+          <span class="small" id="status">데이터 로딩 중…</span>
+        </div>
+        <div class="bd">
+          <div id="out" class="grid"></div>
+          <div id="err" class="err" style="display:none;"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+  const DRAWS_URL = "../data/yeongeum720_draws.json";
+  const FREQ_URL  = "../data/yeongeum720_freq.json";
+
+  let draws = null;
+  let freq = null;
+
+  const $ = (sel) => document.querySelector(sel);
+
+  function setText(id, t){ $(id).textContent = t; }
+
+  function readCycle(key){
+    const v = localStorage.getItem(key);
+    const n = v ? parseInt(v, 10) : 0;
+    return Number.isFinite(n) ? n : 0;
+  }
+  function writeCycle(key, n){
+    localStorage.setItem(key, String(n));
+  }
+
+  function rankKeysByCount(obj){
+    const keys = Object.keys(obj);
+    keys.sort((a,b)=>{
+      const da = obj[a] ?? 0;
+      const db = obj[b] ?? 0;
+      if (db !== da) return db - da;
+      return Number(a) - Number(b);
+    });
+    return keys.map(Number);
+  }
+
+  function pickIndex(tier, pos, idx, len){
+    if (len <= 1) return 0;
+    let span = len;
+    if (tier === "top") span = Math.min(1, len);
+    else if (tier === "topmix") span = Math.min(3, len);
+    else if (tier === "mix") span = Math.min(6, len);
+    else span = len;
+
+    const tailBias = (pos >= 4) ? 0 : 1;
+    return (idx + pos * 2 + tailBias) % span;
+  }
+
+  function recommend(n){
+    const groupRank = rankKeysByCount(freq.group_counts);
+    const digitRank = {};
+    for(let p=1;p<=6;p++){
+      digitRank["pos"+p] = rankKeysByCount(freq.digit_counts["pos"+p]);
+    }
+
+    const tier = (n===1) ? "top" : (n===5 ? "topmix" : "mix");
+
+    const cycleKey = "yeongeum720_cycle_" + n;
+    const cycle = readCycle(cycleKey);
+
+    const out = [];
+    for(let i=0;i<n;i++){
+      const idx = cycle + i;
+      const group = groupRank[idx % groupRank.length];
+
+      const digits = [];
+      for(let p=1;p<=6;p++){
+        const r = digitRank["pos"+p];
+        const pi = pickIndex(tier, p, idx, r.length);
+        digits.push(r[pi]);
+      }
+      out.push({group, digits});
+    }
+
+    // 다음 클릭 때 바뀌게 “사이클” 증가
+    writeCycle(cycleKey, cycle + n);
+    return out;
+  }
+
+  function ballEl(d){
+    const s = document.createElement("span");
+    s.className = "ball d" + d;
+    s.textContent = String(d);
+    return s;
+  }
+
+  function ticketEl(t, animate=true){
+    const card = document.createElement("div");
+    card.className = "ticket";
+
+    const left = document.createElement("div");
+    left.className = "left";
+
+    const g = document.createElement("span");
+    g.className = "group g" + t.group;
+    g.textContent = t.group + "조";
+
+    const balls = document.createElement("div");
+    balls.className = "balls";
+
+    // “실시간 호출” 느낌: 최종 숫자를 바로 보여주되, 잠깐 롤 애니메이션
+    t.digits.forEach((d, i)=>{
+      const b = ballEl(d);
+      if (animate){
+        b.classList.add("roll");
+        b.style.animationDelay = (i * 40) + "ms";
+      }
+      balls.appendChild(b);
+    });
+
+    left.appendChild(g);
+    left.appendChild(balls);
+
+    const right = document.createElement("div");
+    right.className = "small";
+    right.textContent = (t.group + "조 " + t.digits.join(""));
+
+    card.appendChild(left);
+    card.appendChild(right);
+    return card;
+  }
+
+  function render(list){
+    const out = $("#out");
+    out.innerHTML = "";
+    list.forEach((t)=> out.appendChild(ticketEl(t, true)));
+  }
+
+  async function load(){
+    try{
+      const [dRes, fRes] = await Promise.all([fetch(DRAWS_URL), fetch(FREQ_URL)]);
+      if(!dRes.ok || !fRes.ok) throw new Error("데이터 JSON을 불러오지 못했습니다. (data 폴더 업데이트 필요)");
+      draws = await dRes.json();
+      freq = await fRes.json();
+
+      const maxRound = freq.max_round ?? "-";
+      setText("#pill-round", "회차: " + maxRound);
+      setText("#pill-updated", "업데이트: " + (freq.generated_at ? freq.generated_at.replace("T"," ").replace("Z"," UTC") : "-"));
+      setText("#status", "준비 완료");
+    }catch(e){
+      $("#err").style.display = "block";
+      $("#err").textContent =
+        "데이터가 없습니다 / 로딩 실패\n\n" +
+        "- 먼저 GitHub Actions에서 update-yeongeum720 워크플로우를 1회 실행해 data/*.json을 생성하세요.\n" +
+        "- 에러: " + (e?.message || e);
+      setText("#status", "오류");
+    }
+  }
+
+  $("#b1").addEventListener("click", ()=>{ if(!freq) return; render(recommend(1)); });
+  $("#b5").addEventListener("click", ()=>{ if(!freq) return; render(recommend(5)); });
+  $("#b10").addEventListener("click", ()=>{ if(!freq) return; render(recommend(10)); });
+  $("#bReset").addEventListener("click", ()=>{
+    ["1","5","10"].forEach(n => localStorage.removeItem("yeongeum720_cycle_"+n));
+    setText("#status", "사이클 리셋 완료");
+  });
+
+  load();
+</script>
+</body>
+</html>
