@@ -177,12 +177,13 @@
       <div class="title">
         <h1>연금복권720+ 빈도 기반 추천기</h1>
         <p class="sub">
-          <b>1개=Top3 순환</b> / <b>5개=상위(Top) 혼합</b> / <b>10개=상~중~하 분산</b> (무작위 사용 안 함)
+          <b>무작위 없이</b>도 “수백만 조합”까지 크게 순환합니다. (기기별 시드 + cycle 분산)
         </p>
       </div>
       <div class="meta">
         <div class="pill" id="pill-round">회차: -</div>
         <div class="pill" id="pill-updated">업데이트: -</div>
+        <div class="pill" id="pill-seed">시드: -</div>
         <a class="pill" href="https://www.dhlottery.co.kr/pt720/intro" target="_blank" rel="noopener">공식 안내</a>
       </div>
     </header>
@@ -191,7 +192,7 @@
       <section class="card">
         <div class="hd">
           <b>추천 생성</b>
-          <span class="small">클릭할수록 “순환(cycle)”으로 패턴이 바뀜(무작위 X)</span>
+          <span class="small">1/5/10 모두 클릭할수록 “큰 순환”으로 변합니다(무작위 X)</span>
         </div>
         <div class="bd">
           <div class="row">
@@ -200,10 +201,12 @@
               <button id="b5">번호 5개 추천</button>
               <button id="b10">번호 10개 추천</button>
               <button class="secondary" id="bReset">사이클 리셋</button>
+              <button class="secondary" id="bSeedReset">시드 초기화</button>
             </div>
           </div>
           <div class="note">
-            ※ 2등은 <b>조만 바뀌고 6자리는 동일</b> / 3등은 <b>끝 5자리 일치</b> 조건이라, 추천 결과에 <b>2등·3등 힌트</b>를 같이 보여줍니다.
+            ※ 2등은 <b>조만 바뀌고 6자리는 동일</b> / 3등은 <b>끝 5자리 일치</b> 조건이라, 추천 결과에 <b>2등·3등 힌트</b>를 같이 보여줍니다.<br/>
+            ※ 여러 사람이 눌러도 같은 번호가 덜 겹치도록 <b>기기별(브라우저별) 시드</b>를 기본으로 씁니다.
           </div>
         </div>
       </section>
@@ -222,13 +225,13 @@
   </div>
 
 <script>
-  // ✅ 경로가 어디서 열려도 안 깨지게 프로젝트 루트 기준으로 고정
+  // ✅ 프로젝트 루트 기준 경로 고정
   const PROJECT_ROOT = location.pathname.includes("/yeongeum720/")
-    ? new URL("../", location.href)   // /<repo>/yeongeum720/ → /<repo>/
-    : new URL("./", location.href);   // /<repo>/ → /<repo>/
+    ? new URL("../", location.href)
+    : new URL("./", location.href);
 
   const PATH_FREQ  = new URL("data/yeongeum720_freq.json", PROJECT_ROOT).toString();
-  const PATH_DRAWS = new URL("data/yeongeum720_draws.json", PROJECT_ROOT).toString();
+  const PATH_DRAWS = new URL("data/yeongeum720_draws.json", PROJECT_ROOT).toString(); // (현재 UI에선 미사용)
 
   let freq = null;
 
@@ -246,6 +249,47 @@
     localStorage.setItem(key, String(n));
   }
 
+  // ─────────────────────────────────────────────────────────
+  // ✅ 무작위 없이도 “큰 순환”을 만들기 위한 해시/믹스(결정론)
+  function fnv1a32(str){
+    let h = 0x811c9dc5;
+    for (let i=0;i<str.length;i++){
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0);
+  }
+
+  function mix32(x){
+    x >>>= 0;
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x7feb352d) >>> 0;
+    x ^= x >>> 15;
+    x = Math.imul(x, 0x846ca68b) >>> 0;
+    x ^= x >>> 16;
+    return x >>> 0;
+  }
+
+  function getSeed32(){
+    // 사용자가 저장한 seed가 있으면 그걸 우선
+    const saved = localStorage.getItem("yeongeum720_seed");
+    if (saved && saved.trim()) return fnv1a32(saved.trim());
+
+    // 기본은 “기기/브라우저별로” 조금씩 다르게(여러 사람 동일 번호 겹침 완화)
+    const base = [
+      location.host,
+      location.pathname.split("/").slice(0,3).join("/"),
+      navigator.userAgent,
+      navigator.language || ""
+    ].join("|");
+
+    return fnv1a32(base);
+  }
+
+  function toHex8(u32){
+    return (u32 >>> 0).toString(16).padStart(8, "0");
+  }
+
   function ranksFromFreq(freq){
     const groupRank = (freq.group?.ranked || []).map(x => x.digit);
     const posRank = (freq.positions || []).map(p => (p.ranked || []).map(x => x.digit));
@@ -254,105 +298,98 @@
 
   function makeHints(group, digits){
     const number = digits.join("");
-    const last5 = number.slice(1); // 끝 5자리
+    const last5 = number.slice(1);
     const secondGroups = [1,2,3,4,5].filter(g => g !== group);
     return { number, last5, secondGroups };
   }
 
   // ─────────────────────────────────────────────────────────
-  // 추천 규칙
-  // 1개: Top3 순환 (버튼 누를 때마다 바뀜, 무작위 X)
-  // 5개: 상위(Top 3) 혼합 + cycle로 순환
-  // 10개: 상~중~하(Top~Mid~Low) 분산 + cycle로 순환
+  // ✅ “빈도 기반” 유지: posRank[p][rankIndex]에서 rankIndex만 크게 순환
+  // mode별로 “랭크대”만 다르게:
+  // 1개: 상위偏(대부분 상위, 가끔 중위까지)
+  // 5개: 상위~중위 혼합
+  // 10개: 상~중~하 분산(훨씬 넓게)
+  const BANDS_1  = [[0,6]]; // 0~5 (상위偏)
+  const BANDS_5  = [[0,7],[0,8],[1,9],[2,10],[0,10]]; // 상위~중위, 마지막은 와이드
+  const BANDS_10 = [
+    [0,4],[0,5],[1,6],     // 상
+    [2,7],[3,8],[4,9],     // 중
+    [5,10],[6,10],[0,10],  // 하/와이드
+    [0,10]                 // 와이드
+  ];
 
-  function recommendTopCycle1(cycle){
-    const { groupRank, posRank } = ranksFromFreq(freq);
-
-    const gLen = groupRank.length || 1;
-    const group = groupRank[cycle % gLen] ?? 1;
-
-    const digits = [];
-    for (let p = 0; p < 6; p++) {
-      const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-      const span = Math.min(3, r.length || 1);     // Top3
-      const idx = (cycle + p) % span;              // 자리마다 오프셋
-      digits.push(r[idx] ?? r[0] ?? 0);
-    }
-
-    return [{
-      label: "1",
-      mode: "Top3 순환",
-      group,
-      digits,
-      ...makeHints(group, digits)
-    }];
+  function pickBand(mode, slot){
+    if (mode === 1) return BANDS_1[0];
+    if (mode === 5) return BANDS_5[slot % BANDS_5.length];
+    return BANDS_10[slot % BANDS_10.length];
   }
 
-  function recommendTopMix5(cycle){
+  function makeTicket(mode, cycle, slot){
+    const seed = getSeed32();
+    const maxRound = freq?.rounds?.max ?? 0;
+
     const { groupRank, posRank } = ranksFromFreq(freq);
-    const topSpan = 3;
-    const gSpan = Math.min(2, groupRank.length || 2);
-
-    const patterns = [
-      [0,0,0,0,0,0],
-      [1,0,1,0,1,0],
-      [0,1,0,1,0,1],
-      [2,1,2,1,2,1],
-      [1,2,1,2,1,2],
-    ];
-
-    const out = [];
-    const base = cycle % topSpan;
-
-    for(let i=0;i<5;i++){
-      const pat = patterns[i];
-      const group = groupRank[(i + cycle) % gSpan] ?? (groupRank[0] ?? 1);
-
-      const digits = [];
-      for(let p=0;p<6;p++){
-        const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-        const span = Math.min(topSpan, r.length || 1);
-        const idx = (pat[p] + base + i) % span;
-        digits.push(r[idx] ?? 0);
-      }
-
-      out.push({ label: String(i+1), mode: "상위 혼합", group, digits, ...makeHints(group, digits) });
-    }
-    return out;
-  }
-
-  function recommendSpread10(cycle){
-    const { groupRank, posRank } = ranksFromFreq(freq);
-
-    const patterns = [
-      [0,0,0,0,0,0],     // 상
-      [1,1,1,1,1,1],     // 상
-      [2,2,2,2,2,2],     // 상
-      [3,4,3,4,3,4],     // 중
-      [4,3,4,3,4,3],     // 중
-      [5,6,5,6,5,6],     // 중~하
-      [6,5,6,5,6,5],     // 중~하
-      [7,8,7,8,7,8],     // 하
-      [8,7,8,7,8,7],     // 하
-      [9,9,9,9,9,9],     // 최하
-    ];
-
-    const out = [];
-    const base = cycle % 10;
     const gLen = groupRank.length || 5;
 
-    for(let i=0;i<10;i++){
-      const pat = patterns[i];
-      const group = groupRank[(i + cycle) % gLen] ?? 1;
+    const band = pickBand(mode, slot);
+    const start = band[0], end = band[1];
+    const span = Math.max(1, end - start);
 
-      const digits = [];
-      for(let p=0;p<6;p++){
-        const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-        const idx = (pat[p] + base + p + i) % (r.length || 1);
-        digits.push(r[idx] ?? 0);
+    // 그룹 선택: cycle/slot/seed/회차를 섞어서 분산
+    const gx = mix32(seed ^ Math.imul(maxRound + 1, 0x9e3779b1) ^ Math.imul(cycle + 7, 0x85ebca6b) ^ Math.imul(slot + 13, 0xc2b2ae35) ^ Math.imul(mode, 0x27d4eb2f));
+    const group = groupRank[gx % gLen] ?? ((gx % 5) + 1);
+
+    // 6자리: 각 자리마다 서로 다른 salt로 큰 순환
+    const digits = [];
+    for (let p=0; p<6; p++){
+      const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
+
+      // 결정론적 인덱스 (무작위 X)
+      let x = seed;
+      x ^= Math.imul(maxRound + 11, 0x9e3779b1);
+      x ^= Math.imul(cycle + 31, 0x85ebca6b);
+      x ^= Math.imul(slot + 97, 0xc2b2ae35);
+      x ^= Math.imul(p + 1, 0x27d4eb2f);
+      x ^= Math.imul(mode, 0x165667b1);
+      x = mix32(x);
+
+      // mode별 band 범위 안에서 rankIndex 선택
+      const rankIndex = start + (x % span);
+      digits.push(r[rankIndex % r.length] ?? r[0] ?? 0);
+    }
+
+    return { group, digits, ...makeHints(group, digits) };
+  }
+
+  function makeBatch(mode, count, cycle){
+    const out = [];
+    const used = new Set();
+
+    for (let i=0;i<count;i++){
+      // 중복이 나오면 slot을 살짝 이동시키며(결정론적으로) 다시 생성
+      let saltTry = 0;
+      let ticket;
+      while (true){
+        ticket = makeTicket(mode, cycle, i + saltTry * 100);
+        const key = `${ticket.group}-${ticket.number}`;
+        if (!used.has(key)) {
+          used.add(key);
+          break;
+        }
+        saltTry++;
+        if (saltTry > 20) break; // 과한 루프 방지
       }
 
-      out.push({ label: String(i+1), mode: "상~중~하 분산", group, digits, ...makeHints(group, digits) });
+      const modeLabel =
+        mode === 1  ? "1개(상위偏·대형순환)" :
+        mode === 5  ? "5개(상~중 혼합·대형순환)" :
+                      "10개(상~중~하 분산·대형순환)";
+
+      out.push({
+        label: String(i + 1),
+        mode: modeLabel,
+        ...ticket
+      });
     }
     return out;
   }
@@ -399,9 +436,7 @@
 
     const h = document.createElement("div");
     h.className = "hintline";
-
     const secondText = t.secondGroups.map(g => `${g}조`).join(", ");
-
     h.innerHTML = `
       <span><b>2등(조만 변경):</b> <span class="mono">${secondText} + ${t.number}</span></span>
       <span>│</span>
@@ -410,7 +445,6 @@
 
     card.appendChild(topline);
     card.appendChild(h);
-
     return card;
   }
 
@@ -430,6 +464,10 @@
       const maxRound = freq.rounds?.max ?? "-";
       setText("#pill-round", "회차: " + maxRound);
       setText("#pill-updated", "업데이트: " + (freq.updatedAt ? freq.updatedAt.replace("T"," ").replace("Z"," UTC") : "-"));
+
+      const seed = getSeed32();
+      setText("#pill-seed", "시드: " + toHex8(seed));
+
       setText("#status", "준비 완료");
     }catch(e){
       $("#err").style.display = "block";
@@ -446,7 +484,7 @@
     const k = "yeongeum720_cycle_1";
     const cycle = readCycle(k) + 1;
     writeCycle(k, cycle);
-    render(recommendTopCycle1(cycle));
+    render(makeBatch(1, 1, cycle));
   });
 
   $("#b5").addEventListener("click", ()=>{
@@ -454,7 +492,7 @@
     const k = "yeongeum720_cycle_5";
     const cycle = readCycle(k) + 1;
     writeCycle(k, cycle);
-    render(recommendTopMix5(cycle));
+    render(makeBatch(5, 5, cycle));
   });
 
   $("#b10").addEventListener("click", ()=>{
@@ -462,13 +500,19 @@
     const k = "yeongeum720_cycle_10";
     const cycle = readCycle(k) + 1;
     writeCycle(k, cycle);
-    render(recommendSpread10(cycle));
+    render(makeBatch(10, 10, cycle));
   });
 
   $("#bReset").addEventListener("click", ()=>{
     ["yeongeum720_cycle_1","yeongeum720_cycle_5","yeongeum720_cycle_10"]
       .forEach(k => localStorage.removeItem(k));
     setText("#status", "사이클 리셋 완료");
+  });
+
+  $("#bSeedReset").addEventListener("click", ()=>{
+    localStorage.removeItem("yeongeum720_seed");
+    setText("#status", "시드 초기화 완료(기기 시드 적용)");
+    setText("#pill-seed", "시드: " + toHex8(getSeed32()));
   });
 
   load();
