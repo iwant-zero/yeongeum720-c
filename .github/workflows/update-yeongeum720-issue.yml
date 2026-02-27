@@ -1,50 +1,37 @@
-name: Yeongeum720 Recommend (Issue)
+name: Yeongeum720 Recommender (Issue)
 
 on:
-  workflow_dispatch:
   issues:
     types: [opened, edited]
+  issue_comment:
+    types: [created]
 
 permissions:
-  issues: write
   contents: read
+  issues: write
 
 jobs:
   recommend:
+    if: >
+      (github.event_name == 'issues' && (contains(github.event.issue.title, '/yeongeum720') || contains(github.event.issue.body, '/yeongeum720') || contains(github.event.issue.title, '연금') || contains(github.event.issue.title, '720')))
+      || (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '/yeongeum720') || contains(github.event.comment.body, '/연금720') || contains(github.event.comment.body, '연금복권')))
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
 
       - name: Setup Node
-      - uses: actions/setup-node@v4
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 20
 
-      - name: Build recommendation markdown
-        id: rec
-        run: |
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          node scripts/update_yeongeum720.mjs --no-write --recommend 10 >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+      # ✅ 저장소 data/*.json을 건드리지 않고(—no-update) 추천만 출력
+      - name: Build comment body
+        run: node scripts/update_yeongeum720.mjs --no-update --recommend 10 --format md > comment.md
 
       - name: Comment to issue
-      - uses: actions/github-script@v7
+        uses: peter-evans/create-comment@v3
         with:
-          script: |
-            const issue_number = context.payload.issue?.number;
-            if (!issue_number) {
-              core.info("No issue context (workflow_dispatch). Skip commenting.");
-              return;
-            }
-            const body = `${{ toJSON(steps.rec.outputs.body) }}`;
-            // toJSON으로 감싸면 문자열 따옴표가 붙으니 처리
-            const cleaned = JSON.parse(body);
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-              body: cleaned
-            });
+          issue-number: ${{ github.event.issue.number }}
+          body-path: comment.md
