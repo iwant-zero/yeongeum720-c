@@ -9,6 +9,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const DRAWS_PATH = path.join(DATA_DIR, "yeongeum720_draws.json");
 const FREQ_PATH = path.join(DATA_DIR, "yeongeum720_freq.json");
 
+// GitHub-hosted에서 dhlottery 차단이 생길 수 있어 공개 페이지(티스토리) 파싱
 const PRIMARY_SOURCE_URL = "https://signalfire85.tistory.com/277";
 const POS_NAMES = ["십만", "만", "천", "백", "십", "일"];
 
@@ -80,8 +81,11 @@ async function fetchDrawsFromPrimary() {
   const loose = htmlToLooseText(html);
   const text = normalizeAll(loose.replace(/\n/g, " "));
 
+  // 303회 2026.02.19 1등 4 6 3 9 5 6 6 1
   const reFirst =
     /(\d{1,4})회\s*(\d{4}\.\d{2}\.\d{2})\s*1등\s*([1-5])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*(\d+)/g;
+
+  // 보너스 각조 6 1 9 1 3 6 10
   const reBonus =
     /보너스\s*각조\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*(\d+)/g;
 
@@ -106,6 +110,7 @@ async function fetchDrawsFromPrimary() {
     throw new Error(`Failed to parse draws from primary source: ${PRIMARY_SOURCE_URL}`);
   }
 
+  // 1등 다음에 나오는 가장 가까운 보너스 매칭(너무 멀면 무시)
   let b = 0;
   const draws = [];
   for (const f of firstMatches) {
@@ -159,8 +164,13 @@ function rankCounts(countsObj) {
   return keys.map((k) => ({ digit: Number(k), count: countsObj[k] ?? 0 }));
 }
 
+// index.html이 기대하는 스키마:
+// freq.updatedAt
+// freq.rounds.{min,max,count}
+// freq.group.ranked / freq.positions[].ranked
 function buildFreq(draws) {
   const groupCounts = makeEmptyGroupCounts();
+
   const posCounts = Array.from({ length: 6 }, () => makeEmptyDigitCounts());
   const overallCounts = makeEmptyDigitCounts();
 
@@ -222,7 +232,8 @@ function buildFreq(draws) {
 }
 
 // ─────────────────────────────────────────────────────────
-// ✅ 추천 튜닝 + 2등/3등 힌트 포함
+// 추천(이슈 댓글용) : UI 규칙과 동일 + 2등/3등 힌트 포함
+
 function ranksFromFreq(freq) {
   return {
     groupRank: (freq.group?.ranked || []).map(x => x.digit),
@@ -237,11 +248,21 @@ function makeHints(group, digits) {
   return { number, last5, secondGroups };
 }
 
-function recommend1Fixed(freq) {
+function recommend1TopCycle(freq, cycle=1) {
   const { groupRank, posRank } = ranksFromFreq(freq);
-  const group = groupRank[0] ?? 1;
-  const digits = posRank.map(r => (r[0] ?? 0)).slice(0,6);
-  return [{ label: "1", mode: "최빈 고정", group, digits, ...makeHints(group, digits) }];
+
+  const gLen = groupRank.length || 1;
+  const group = groupRank[cycle % gLen] ?? 1;
+
+  const digits = [];
+  for (let p = 0; p < 6; p++) {
+    const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
+    const span = Math.min(3, r.length || 1);
+    const idx = (cycle + p) % span;
+    digits.push(r[idx] ?? r[0] ?? 0);
+  }
+
+  return [{ label: "1", mode: "Top3 순환", group, digits, ...makeHints(group, digits) }];
 }
 
 function recommend5TopMix(freq, cycle=1) {
@@ -267,7 +288,7 @@ function recommend5TopMix(freq, cycle=1) {
     const digits = [];
     for (let p=0;p<6;p++) {
       const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-      const span = Math.min(topSpan, r.length);
+      const span = Math.min(topSpan, r.length || 1);
       const idx = (pat[p] + base + i) % span;
       digits.push(r[idx] ?? 0);
     }
@@ -295,15 +316,16 @@ function recommend10Spread(freq, cycle=1) {
 
   const out = [];
   const base = cycle % 10;
+  const gLen = groupRank.length || 5;
 
   for (let i=0;i<10;i++) {
     const pat = patterns[i];
-    const group = groupRank[(i + cycle) % (groupRank.length || 5)] ?? 1;
+    const group = groupRank[(i + cycle) % gLen] ?? 1;
 
     const digits = [];
     for (let p=0;p<6;p++) {
       const r = posRank[p] || [0,1,2,3,4,5,6,7,8,9];
-      const idx = (pat[p] + base + p + i) % r.length;
+      const idx = (pat[p] + base + p + i) % (r.length || 1);
       digits.push(r[idx] ?? 0);
     }
 
@@ -333,7 +355,7 @@ function formatMd(freq, rec1, rec5, rec10) {
     `- 생성 시각: ${gen}`,
     `- 소스: ${src}`,
     ``,
-    `### ✅ 1개 추천 (최빈 고정)`,
+    `### ✅ 1개 추천 (Top3 순환)`,
     rec1.map(formatTicketLine).join("\n"),
     ``,
     `### ✅ 5개 추천 (상위 혼합)`,
@@ -389,7 +411,7 @@ async function main() {
   if (args.recommend > 0) {
     const cycle = Number.isFinite(args.cycle) ? args.cycle : 1;
 
-    const rec1 = recommend1Fixed(freq);
+    const rec1 = recommend1TopCycle(freq, cycle);
     const rec5 = recommend5TopMix(freq, cycle);
     const rec10 = recommend10Spread(freq, cycle);
 
