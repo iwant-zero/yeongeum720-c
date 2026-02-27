@@ -9,8 +9,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const DRAWS_PATH = path.join(DATA_DIR, "yeongeum720_draws.json");
 const FREQ_PATH = path.join(DATA_DIR, "yeongeum720_freq.json");
 
-// ✅ GitHub hosted runner에서 dhlottery 차단/대기 페이지가 떠서,
-// ✅ 공개 페이지(차단 덜한)에서 “회차별 1등/보너스”를 파싱하는 방식
+// GitHub hosted runner에서 dhlottery 차단이 나올 수 있어 공개 페이지(티스토리) 기반 파싱
 const PRIMARY_SOURCE_URL = "https://signalfire85.tistory.com/277";
 
 const POS_NAMES = ["십만", "만", "천", "백", "십", "일"];
@@ -20,7 +19,6 @@ function nowIso() {
 }
 
 function ymdDotToIso(s) {
-  // "2026.02.19" -> "2026-02-19"
   const m = String(s).match(/^(\d{4})\.(\d{2})\.(\d{2})$/);
   if (!m) return null;
   return `${m[1]}-${m[2]}-${m[3]}`;
@@ -67,6 +65,8 @@ function htmlToLooseText(html) {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/div>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -81,68 +81,93 @@ function htmlToLooseText(html) {
     .trim();
 }
 
-function normalizeLine(s) {
-  // 웹뷰/링크 변형 제거(예: "" 같은 흔적)
+function normalizeAll(s) {
+  // "" 같은 표시 제거 + 공백 정리
   return String(s)
     .replace(/【\d+†/g, "")
     .replace(/】/g, "")
+    .replace(/\u00A0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+/**
+ * ✅ 핵심 변경:
+ * - 라인 단위가 아니라, "전체 텍스트"에서 정규식 matchAll로 스캔
+ * - 줄바꿈이 없든 있든(=GitHub에서 HTML이 한 줄로 와도) 파싱됨
+ */
 async function fetchDrawsFromPrimary() {
   const html = await fetchText(PRIMARY_SOURCE_URL);
-  const text = htmlToLooseText(html);
-  const lines = text
-    .split("\n")
-    .map((l) => normalizeLine(l))
-    .filter(Boolean);
+  const loose = htmlToLooseText(html);
 
-  const draws = [];
+  // 줄바꿈을 공백으로 치환해도 되게 통합 텍스트로 만든다
+  const text = normalizeAll(loose.replace(/\n/g, " "));
 
-  // 예시:
   // 303회 2026.02.19 1등 4 6 3 9 5 6 6 1
-  // 보너스 각조 6 1 9 1 3 6 10
+  // 공백/콤마 유무에 상관없이 동작하도록 \s*로 구성
   const reFirst =
-    /^(\d{1,4})회\s+(\d{4}\.\d{2}\.\d{2})\s+1등\s+([1-5])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+(\d+)\s*$/;
+    /(\d{1,4})회\s*(\d{4}\.\d{2}\.\d{2})\s*1등\s*([1-5])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*(\d+)/g;
+
+  // 보너스 각조 6 1 9 1 3 6 10
   const reBonus =
-    /^보너스\s+각조\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+([0-9])\s+(\d+)\s*$/;
+    /보너스\s*각조\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*([0-9])\s*(\d+)/g;
 
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(reFirst);
-    if (!m) continue;
+  const firstMatches = [...text.matchAll(reFirst)].map((m) => ({
+    index: m.index ?? 0,
+    round: Number(m[1]),
+    dateDot: m[2],
+    group: Number(m[3]),
+    digits: [m[4], m[5], m[6], m[7], m[8], m[9]].map(Number),
+    winners: Number(m[10]),
+    rawLen: m[0].length,
+  }));
 
-    const round = Number(m[1]);
-    const dateIso = ymdDotToIso(m[2]);
-    const group = Number(m[3]);
-    const digits = [m[4], m[5], m[6], m[7], m[8], m[9]].map(Number);
-    const winners = Number(m[10]);
+  const bonusMatches = [...text.matchAll(reBonus)].map((m) => ({
+    index: m.index ?? 0,
+    digits: [m[1], m[2], m[3], m[4], m[5], m[6]].map(Number),
+    winners: Number(m[7]),
+    rawLen: m[0].length,
+  }));
 
-    let bonusDigits = null;
-    let bonusWinners = null;
+  if (!firstMatches.length) {
+    throw new Error(
+      `Failed to parse draws from primary source: ${PRIMARY_SOURCE_URL}\n(페이지 구조가 바뀌었거나, Actions에서 받은 HTML이 달라졌을 수 있음)`
+    );
+  }
 
-    const b = (lines[i + 1] || "").match(reBonus);
-    if (b) {
-      bonusDigits = [b[1], b[2], b[3], b[4], b[5], b[6]].map(Number);
-      bonusWinners = Number(b[7]);
+  // 1등 라인 다음에 나오는 “가장 가까운 보너스”를 매칭
+  let b = 0;
+  const draws = [];
+  for (const f of firstMatches) {
+    const dateIso = ymdDotToIso(f.dateDot);
+
+    // f 이후에 등장하는 bonus 중 가장 가까운 것 선택
+    while (b < bonusMatches.length && bonusMatches[b].index < f.index) b++;
+
+    let bonus = null;
+    if (b < bonusMatches.length) {
+      const candidate = bonusMatches[b];
+
+      // 너무 멀리 떨어진 보너스는 다른 구간일 수 있으니 안전장치(거리 제한)
+      const fEnd = f.index + f.rawLen;
+      const dist = candidate.index - fEnd;
+
+      if (dist >= 0 && dist <= 200) {
+        bonus = { digits: candidate.digits, winners: candidate.winners };
+        b += 1;
+      }
     }
 
     draws.push({
-      round,
+      round: f.round,
       date: dateIso,
-      first: { group, digits, winners },
-      bonus: bonusDigits ? { digits: bonusDigits, winners: bonusWinners } : null,
+      first: { group: f.group, digits: f.digits, winners: f.winners },
+      bonus,
       source: PRIMARY_SOURCE_URL,
     });
   }
 
-  if (!draws.length) {
-    throw new Error(
-      `Failed to parse draws from primary source: ${PRIMARY_SOURCE_URL}\n(페이지 구조가 바뀌었거나 접근이 막혔을 수 있음)`
-    );
-  }
-
-  // round 기준 중복 제거 + 오름차순 정렬
+  // 중복 제거 + 오름차순 정렬
   const map = new Map(draws.map((d) => [d.round, d]));
   return [...map.values()].sort((a, b) => a.round - b.round);
 }
@@ -174,10 +199,9 @@ function rankCounts(countsObj) {
   return keys.map((k) => ({ digit: Number(k), count: countsObj[k] ?? 0 }));
 }
 
-// ✅ index.html이 기대하는 스키마로 freq 생성:
+// index.html이 기대하는 스키마:
 // freq.updatedAt
 // freq.rounds.{min,max,count}
-// freq.group.ranked[0].digit, freq.positions[i].ranked[0].digit 등
 function buildFreq(draws) {
   const groupCounts = makeEmptyGroupCounts();
 
@@ -187,23 +211,20 @@ function buildFreq(draws) {
   const bonusPosCounts = Array.from({ length: 6 }, () => makeEmptyDigitCounts());
   const bonusOverallCounts = makeEmptyDigitCounts();
 
-  // 3등(끝 5자리) 빈도(옵션)
   const last5Map = new Map();
 
   for (const d of draws) {
     inc(groupCounts, String(d.first.group));
 
-    // 1등 6자리
     d.first.digits.forEach((digit, idx) => {
       inc(posCounts[idx], String(digit));
       inc(overallCounts, String(digit));
     });
 
-    // 3등(끝 5자리)
+    // 3등(끝 5자리) 참고용
     const last5 = d.first.digits.slice(1).join("");
     last5Map.set(last5, (last5Map.get(last5) || 0) + 1);
 
-    // 보너스 6자리(있으면)
     if (d.bonus?.digits) {
       d.bonus.digits.forEach((digit, idx) => {
         inc(bonusPosCounts[idx], String(digit));
@@ -241,45 +262,36 @@ function buildFreq(draws) {
     updatedAt: nowIso(),
     source: { primary: PRIMARY_SOURCE_URL },
     rounds,
-    group: {
-      counts: groupCounts,
-      ranked: rankCounts(groupCounts), // digit=조(1~5)
-    },
+    group: { counts: groupCounts, ranked: rankCounts(groupCounts) },
     positions,
-    overall: {
-      counts: overallCounts,
-      ranked: rankCounts(overallCounts),
-    },
+    overall: { counts: overallCounts, ranked: rankCounts(overallCounts) },
     bonus: {
       positions: bonusPositions,
-      overall: {
-        counts: bonusOverallCounts,
-        ranked: rankCounts(bonusOverallCounts),
-      },
+      overall: { counts: bonusOverallCounts, ranked: rankCounts(bonusOverallCounts) },
     },
     third: { last5Top },
   };
 }
 
-// ─────────────────────────────────────────────────────────
-// 추천(이슈 댓글용) : 무작위 없이 “순환(cycle)”만
+// 추천(이슈 댓글용): 무작위 없이 “순환(cycle)”만
 function pickIndex(tier, pos, idx, len) {
   if (len <= 1) return 0;
-
   let span = len;
   if (tier === "top") span = Math.min(1, len);
   else if (tier === "topmix") span = Math.min(3, len);
   else if (tier === "mix") span = Math.min(6, len);
-  else span = len;
 
   const tailBias = pos >= 4 ? 0 : 1;
   return (idx + pos * 2 + tailBias) % span;
 }
 
 function recommendFromFreq(freq, n, cycle) {
+  if (!freq.rounds?.count) {
+    throw new Error("추천할 데이터가 없습니다. 먼저 update 워크플로우로 data/*.json을 생성하세요.");
+  }
+
   const groupRank = freq.group.ranked.map((x) => x.digit);
   const posRank = freq.positions.map((p) => p.ranked.map((x) => x.digit)); // 6 x 10
-
   const tier = n === 1 ? "top" : n === 5 ? "topmix" : "mix";
 
   const out = [];
@@ -328,13 +340,7 @@ function formatMd(freq, rec1, rec5, rec10) {
 }
 
 function parseArgs(argv) {
-  const args = {
-    noUpdate: false,
-    recommend: 0,
-    format: "text", // text | md
-    cycle: 0,
-  };
-
+  const args = { noUpdate: false, recommend: 0, format: "text", cycle: 0 };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--no-update") args.noUpdate = true;
@@ -347,21 +353,19 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv);
-
   await fs.mkdir(DATA_DIR, { recursive: true });
 
-  // 기존 draws (배열) 로드
+  // 기존 draws(배열) 로드
   let draws = [];
   if (await exists(DRAWS_PATH)) {
     const s = await fs.readFile(DRAWS_PATH, "utf-8");
     draws = safeJsonParse(s, []);
   }
 
-  // 업데이트(소스에서 fetch) + 저장
+  // 업데이트 + 저장
   if (!args.noUpdate) {
     const fetched = await fetchDrawsFromPrimary();
 
-    // round 기준 병합
     const map = new Map();
     for (const d of draws) map.set(d.round, d);
     for (const d of fetched) map.set(d.round, d);
@@ -370,7 +374,7 @@ async function main() {
     await fs.writeFile(DRAWS_PATH, JSON.stringify(draws, null, 2), "utf-8");
   }
 
-  // freq 생성/저장 (index.html이 기대하는 키 포함)
+  // freq 생성/저장
   const freq = buildFreq(draws);
   await fs.writeFile(FREQ_PATH, JSON.stringify(freq, null, 2), "utf-8");
 
