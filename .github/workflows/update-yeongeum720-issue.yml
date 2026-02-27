@@ -1,0 +1,37 @@
+name: Yeongeum720 Recommender (Issue)
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  recommend:
+    if: >
+      (github.event_name == 'issues' && (contains(github.event.issue.title, '/yeongeum720') || contains(github.event.issue.body, '/yeongeum720') || contains(github.event.issue.title, '연금') || contains(github.event.issue.title, '720')))
+      || (github.event_name == 'issue_comment' && (contains(github.event.comment.body, '/yeongeum720') || contains(github.event.comment.body, '/연금720') || contains(github.event.comment.body, '연금복권')))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 저장소의 data/*.json 기준으로 추천만 생성 (업데이트는 스케줄 워크플로우가 담당)
+      - name: Build comment body
+        run: node scripts/update_yeongeum720.mjs --no-update --recommend 10 --format md > comment.md
+
+      - name: Comment to Issue
+        uses: peter-evans/create-comment@v3
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body-path: comment.md
