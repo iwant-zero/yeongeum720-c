@@ -8976,5 +8976,33 @@
       "winners": 5
     },
     "source": "https://signalfire85.tistory.com/277"
+  },
+  {
+    "round": 322,
+    "date": "2026-07-02",
+    "first": {
+      "group": 2,
+      "digits": [
+        1,
+        1,
+        9,
+        3,
+        9,
+        2
+      ],
+      "winners": 2
+    },
+    "bonus": {
+      "digits": [
+        6,
+        9,
+        6,
+        9,
+        6,
+        7
+      ],
+      "winners": 1
+    },
+    "source": "https://signalfire85.tistory.com/277"
   }
 ]
