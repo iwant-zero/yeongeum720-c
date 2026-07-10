@@ -9004,5 +9004,33 @@
       "winners": 1
     },
     "source": "https://signalfire85.tistory.com/277"
+  },
+  {
+    "round": 323,
+    "date": "2026-07-09",
+    "first": {
+      "group": 4,
+      "digits": [
+        6,
+        0,
+        4,
+        2,
+        7,
+        0
+      ],
+      "winners": 2
+    },
+    "bonus": {
+      "digits": [
+        9,
+        4,
+        5,
+        8,
+        9,
+        3
+      ],
+      "winners": 10
+    },
+    "source": "https://signalfire85.tistory.com/277"
   }
 ]
