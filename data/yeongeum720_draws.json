@@ -9144,5 +9144,33 @@
       "winners": 5
     },
     "source": "https://signalfire85.tistory.com/277"
+  },
+  {
+    "round": 328,
+    "date": "2026-08-13",
+    "first": {
+      "group": 3,
+      "digits": [
+        6,
+        4,
+        4,
+        5,
+        1,
+        3
+      ],
+      "winners": 2
+    },
+    "bonus": {
+      "digits": [
+        1,
+        7,
+        7,
+        2,
+        3,
+        7
+      ],
+      "winners": 7
+    },
+    "source": "https://signalfire85.tistory.com/277"
   }
 ]
